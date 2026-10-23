@@ -1,0 +1,57 @@
+<article class="detail">
+  <header>
+    @if (sign().glyph; as g) {
+      <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Glyphe"><path [attr.d]="g.svgPathData" /></svg>
+    }
+    <div>
+      <h2>{{ sign().word }}</h2>
+      @if (sign().tags.length) {
+        <div class="tags">
+          @for (t of sign().tags; track t) {
+            <span class="tag">{{ t }}</span>
+          }
+        </div>
+      }
+    </div>
+  </header>
+
+  <div class="hands">
+    @for (h of hands(); track h.label) {
+      <section class="hand">
+        <h3>{{ h.label }}</h3>
+        @if (h.hand?.imageUrl; as url) {
+          <img [src]="url" [alt]="'Configuration ' + h.hand.name" />
+        }
+        <p>
+          <strong>{{ h.hand?.name ?? h.handId }}</strong><br />
+          {{ h.description }}
+        </p>
+      </section>
+    }
+  </div>
+
+  <section>
+    <h3>Emplacement</h3>
+    <p>
+      @for (z of zones(); track $index; let last = $last) {
+        {{ z }}{{ last ? '' : ' → ' }}
+      } @empty {
+        Non précisé
+      }
+    </p>
+  </section>
+
+  @if (sign().note; as note) {
+    <section>
+      <h3>Note</h3>
+      <p class="note">{{ note }}</p>
+    </section>
+  }
+
+  <footer>
+    Créé le {{ sign().createdAt | date: 'longDate' }}
+    @if (!sign().glyph) {
+      · sans dessin (non reconnu dans le Carnet)
+    }
+  </footer>
+</article>

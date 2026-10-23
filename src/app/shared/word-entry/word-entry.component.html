@@ -1,0 +1,45 @@
+<input
+  #input
+  type="text"
+  role="combobox"
+  autocomplete="off"
+  enterkeyhint="send"
+  placeholder="Tapez un mot…"
+  aria-label="Mot à insérer"
+  aria-autocomplete="list"
+  aria-controls="word-options"
+  [attr.aria-expanded]="matches().length > 0"
+  [attr.aria-activedescendant]="matches().length ? 'word-opt-' + activeIndex() : null"
+  [value]="query()"
+  (input)="onInput($any($event.target).value)"
+  (keydown)="onKey($event)"
+/>
+@if (matches().length) {
+  <ul id="word-options" role="listbox" aria-label="Signes correspondants">
+    @for (sign of matches(); track sign.id; let i = $index) {
+      <li
+        [id]="'word-opt-' + i"
+        role="option"
+        [attr.aria-selected]="i === activeIndex()"
+        (mousedown)="$event.preventDefault()"
+        (click)="choose(sign.id)"
+        (mouseenter)="activeIndex.set(i)"
+      >
+        @if (sign.glyph; as g) {
+          <svg class="glyph" [attr.viewBox]="viewBox" aria-hidden="true"><path [attr.d]="g.svgPathData" /></svg>
+        } @else {
+          <span class="glyph none" aria-hidden="true"></span>
+        }
+        <span class="word">{{ sign.word }}</span>
+        @if (sign.tags.length) {
+          <small>{{ sign.tags.join(', ') }}</small>
+        }
+      </li>
+    }
+  </ul>
+} @else if (trimmed()) {
+  <p class="no-match">
+    Aucun signe « {{ trimmed() }} » dans votre dictionnaire.
+    <button type="button" (click)="create.emit(trimmed())">Créer le signe « {{ trimmed() }} »</button>
+  </p>
+}

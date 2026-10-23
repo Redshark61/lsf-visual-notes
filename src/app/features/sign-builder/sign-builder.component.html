@@ -1,0 +1,285 @@
+<section class="wizard">
+  @if (saved(); as sign) {
+    <div class="done" role="status">
+      @if (sign.glyph) {
+        <svg class="glyph big" [attr.viewBox]="viewBox" aria-hidden="true"><path [attr.d]="sign.glyph.svgPathData" /></svg>
+      }
+      <h1 tabindex="-1" #stepHeading>
+        @if (editing()) {
+          « {{ sign.word }} » a été mis à jour.
+        } @else {
+          « {{ sign.word }} » est dans votre dictionnaire.
+        }
+      </h1>
+      @if (!sign.glyph) {
+        <p>Ce signe n'a pas de dessin : il apparaîtra dans le lexique mais pas dans la reconnaissance du Carnet.</p>
+      }
+      @if (editing()) {
+        <a class="button primary" routerLink="/dictionnaire">Retour au dictionnaire</a>
+      } @else if (fromNoteId()) {
+        <button type="button" class="primary" (click)="backToNotebook()">Insérer dans la note et revenir au Carnet</button>
+        <button type="button" (click)="startOver()">Créer un autre signe</button>
+      } @else {
+        <button type="button" class="primary" (click)="startOver()">Créer un autre signe</button>
+      }
+    </div>
+  } @else {
+    @if (editing(); as e) {
+      <p class="from-note">
+        Modification de <strong>« {{ e.word }} »</strong>.
+        <a class="link" routerLink="/dictionnaire">Annuler</a>
+      </p>
+    }
+    @if (fromNoteId()) {
+      <p class="from-note">
+        Nouveau signe depuis le Carnet.
+        <button type="button" class="link" (click)="backToNotebook()">Revenir au Carnet sans enregistrer</button>
+      </p>
+    }
+    <nav class="stepper" aria-label="Étapes">
+      <ol>
+        @for (s of steps; track s.id; let i = $index) {
+          <li>
+            <button
+              type="button"
+              [class.current]="i === stepIndex()"
+              [class.done]="i < stepIndex()"
+              [disabled]="!reachable()[i]"
+              [attr.aria-current]="i === stepIndex() ? 'step' : null"
+              (click)="goTo(i)"
+            >
+              <span class="n">{{ i + 1 }}</span>
+              <span class="t">{{ s.title }}</span>
+            </button>
+          </li>
+        }
+      </ol>
+    </nav>
+
+    <header class="step-header">
+      <h1 tabindex="-1" #stepHeading>
+        {{ step().title }}
+        @if (step().optional) {
+          <small>(facultatif)</small>
+        }
+      </h1>
+    </header>
+
+    <div class="step-body">
+      @if (catalogError(); as e) {
+        <p class="error">{{ e }} <button type="button" (click)="loadCatalog()">Réessayer</button></p>
+      }
+
+      @switch (step().id) {
+        @case ('glyph') {
+          <p class="hint">
+            Dessinez le glyphe rapide qui servira de raccourci dans le Carnet. Pour un simple lexique, passez cette étape.
+          </p>
+          @if (keptGlyph(); as kept) {
+            @if (strokes().length === 0) {
+              <div class="kept">
+                <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Dessin actuel"><path [attr.d]="kept.svgPathData" /></svg>
+                <span>Dessin actuel. Dessinez ci-dessous pour le remplacer.</span>
+                <button type="button" class="link" (click)="removeGlyph()">Retirer le dessin</button>
+              </div>
+            }
+          }
+          <app-smart-canvas
+            class="pad"
+            [initialStrokes]="strokes()"
+            (strokeStart)="onStrokeStart()"
+            (strokesChange)="onStrokesChange($event)"
+          />
+          <div class="row">
+            <button type="button" (click)="undo()" [disabled]="!strokes().length">Annuler le trait</button>
+            <button type="button" (click)="clearDrawing()" [disabled]="!strokes().length">Effacer</button>
+          </div>
+          @if (confusable().length) {
+            <p class="warning" role="status">
+              Ce glyphe ressemble beaucoup à
+              @for (s of confusable(); track s.word; let last = $last) {
+                <strong>« {{ s.word }} »</strong> ({{ s.score | percent }}){{ last ? '' : ', ' }}
+              }
+              : le Carnet risque de les confondre. Ajoutez un détail pour les distinguer.
+            </p>
+          } @else if (similar().length) {
+            <p class="info" role="status">
+              Proche de
+              @for (s of similar(); track s.word; let last = $last) {
+                « {{ s.word }} » ({{ s.score | percent }}){{ last ? '' : ', ' }}
+              }
+              — reste distinguable.
+            </p>
+          }
+        }
+
+        @case ('word') {
+          <label class="field">
+            <span>Mot ou concept associé au signe</span>
+            <input
+              type="text"
+              autocomplete="off"
+              enterkeyhint="next"
+              [maxLength]="maxWordLength"
+              placeholder="ex : Maison"
+              [value]="word()"
+              (input)="word.set($any($event.target).value)"
+              (keydown.enter)="$event.preventDefault(); next()"
+            />
+          </label>
+        }
+
+        @case ('dominant') {
+          @if (catalog.catalog()) {
+            <app-catalog-picker
+              label="Configuration"
+              layout="cards"
+              [items]="catalog.handshapes()"
+              [value]="dominantHandId()"
+              (valueChange)="setDominantHand($event)"
+            />
+            <app-handshape-photo (created)="setDominantHand($event)" />
+            <app-hand-params
+              #movementPicker
+              [(movementId)]="dominantMovementId"
+              [(directionId)]="dominantDirectionId"
+              [(repeated)]="dominantRepeated"
+              [(orientationId)]="dominantOrientationId"
+            />
+            <ng-container *ngTemplateOutlet="sources" />
+          }
+        }
+
+        @case ('nonDominant') {
+          @if (catalog.catalog()) {
+            <app-catalog-picker
+              label="Configuration"
+              layout="cards"
+              noneLabel="Aucune (signe à une main)"
+              [items]="catalog.handshapes()"
+              [value]="nonDominantHandId()"
+              (valueChange)="setNonDominantHand($event)"
+            />
+            <app-handshape-photo (created)="setNonDominantHand($event)" />
+            @if (nonDominantHandId()) {
+              <app-hand-params
+                #movementPicker
+                [(movementId)]="nonDominantMovementId"
+                [(directionId)]="nonDominantDirectionId"
+                [(repeated)]="nonDominantRepeated"
+                [(orientationId)]="nonDominantOrientationId"
+              />
+            }
+            <ng-container *ngTemplateOutlet="sources" />
+          }
+        }
+
+        @case ('zones') {
+          @if (catalog.catalog()) {
+            <app-body-map [zones]="catalog.zones()" [(value)]="zoneIds" />
+          }
+        }
+
+        @case ('note') {
+          <label class="field">
+            <span>Note personnelle</span>
+            <textarea
+              rows="4"
+              [maxLength]="maxNoteLength"
+              placeholder="Contexte, variante régionale, expression du visage…"
+              [value]="note()"
+              (input)="note.set($any($event.target).value)"
+            ></textarea>
+          </label>
+          <label class="field">
+            <span>Tags <small>(séparés par des virgules, {{ maxTags }} max.)</small></span>
+            <input
+              type="text"
+              autocomplete="off"
+              placeholder="ex : famille, lieux"
+              [value]="tagsInput()"
+              (input)="tagsInput.set($any($event.target).value)"
+            />
+          </label>
+          @if (tags().length) {
+            <div class="tags">
+              @for (t of tags(); track t) {
+                <span class="tag">{{ t }}</span>
+              }
+            </div>
+          }
+
+          <h2>Récapitulatif</h2>
+          <dl class="recap">
+            <dt>Dessin</dt>
+            <dd>
+              @if (glyph(); as g) {
+                <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Glyphe"><path [attr.d]="g.svgPathData" /></svg>
+              } @else {
+                Aucun (lexique seul)
+              }
+              <button type="button" class="link" (click)="goTo(0)">Modifier</button>
+            </dd>
+            <dt>Nom</dt>
+            <dd>
+              {{ word() }} <button type="button" class="link" (click)="goTo(1)">Modifier</button>
+            </dd>
+            <dt>Main dominante</dt>
+            <dd>
+              {{ catalogName(dominantHandId()) }} · {{ dominantSummary() }}
+              <button type="button" class="link" (click)="goTo(2)">Modifier</button>
+            </dd>
+            <dt>Main dominée</dt>
+            <dd>
+              @if (nonDominantHandId()) {
+                {{ catalogName(nonDominantHandId()) }} · {{ nonDominantSummary() }}
+              } @else {
+                Aucune
+              }
+              <button type="button" class="link" (click)="goTo(3)">Modifier</button>
+            </dd>
+            <dt>Emplacement</dt>
+            <dd>
+              @for (z of zoneIds(); track z; let last = $last) {
+                {{ catalogName(z) }}{{ last ? '' : ' → ' }}
+              } @empty {
+                Non précisé
+              }
+              <button type="button" class="link" (click)="goTo(4)">Modifier</button>
+            </dd>
+          </dl>
+        }
+      }
+
+      @if (error(); as e) {
+        <p class="error" role="alert">{{ e }}</p>
+      }
+    </div>
+
+    <footer class="nav">
+      <button type="button" (click)="previous()" [disabled]="stepIndex() === 0">Précédent</button>
+      @if (isLast()) {
+        <button type="button" class="primary" (click)="save()" [disabled]="saving()">
+          {{ saving() ? 'Enregistrement…' : 'Enregistrer le signe' }}
+        </button>
+      } @else {
+        @if (blocker(); as b) {
+          <span class="blocker" role="status">{{ b }}</span>
+        }
+        <button type="button" class="primary" (click)="next()" [disabled]="!canAdvance()">
+          {{ step().optional && stepIsEmpty() ? 'Passer cette étape' : 'Suivant' }}
+        </button>
+      }
+    </footer>
+  }
+</section>
+
+<ng-template #sources>
+  @for (source of handshapeSources(); track source.url) {
+    <p class="source">
+      Configurations : <a [href]="source.url" target="_blank" rel="noopener">{{ source.name }}</a> ({{
+        source.license
+      }})
+    </p>
+  }
+</ng-template>

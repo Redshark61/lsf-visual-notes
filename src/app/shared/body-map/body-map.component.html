@@ -1,0 +1,67 @@
+<div class="body-map">
+  <svg [attr.viewBox]="viewBox" class="figure" role="group" aria-label="Silhouette : zones d'emplacement">
+    @for (d of outline; track $index) {
+      <path class="outline" [attr.d]="d" />
+    }
+    <text class="neutral-label" x="276" y="142" text-anchor="middle">Espace neutre</text>
+
+    @for (m of mapped(); track m.zone.id) {
+      <g
+        class="zone"
+        role="checkbox"
+        tabindex="0"
+        [class.selected]="order(m.zone.id) > 0"
+        [class.neutral]="m.zone.id === 'zone_neutral'"
+        [attr.aria-checked]="order(m.zone.id) > 0"
+        [attr.aria-label]="m.zone.name"
+        (click)="toggle(m.zone.id)"
+        (keydown)="onKey($event, m.zone.id)"
+      >
+        <title>{{ m.zone.name }}</title>
+        @for (s of m.geometry.shapes; track $index) {
+          @switch (s.kind) {
+            @case ('ellipse') {
+              <ellipse [attr.cx]="s.cx" [attr.cy]="s.cy" [attr.rx]="s.rx" [attr.ry]="s.ry" />
+            }
+            @case ('rect') {
+              <rect [attr.x]="s.x" [attr.y]="s.y" [attr.width]="s.width" [attr.height]="s.height" [attr.rx]="s.rx" />
+            }
+            @case ('path') {
+              <path [attr.d]="s.d" />
+            }
+          }
+        }
+        @if (order(m.zone.id); as n) {
+          <circle class="badge" [attr.cx]="m.geometry.badge.x" [attr.cy]="m.geometry.badge.y" r="9" />
+          <text class="badge-text" [attr.x]="m.geometry.badge.x" [attr.y]="m.geometry.badge.y + 4" text-anchor="middle">
+            {{ n }}
+          </text>
+        }
+      </g>
+    }
+  </svg>
+
+  <div class="side">
+    <p class="path" aria-live="polite">
+      @if (selectedZones().length) {
+        @for (z of selectedZones(); track z.id; let i = $index, last = $last) {
+          <strong>{{ i + 1 }}. {{ z.name }}</strong>{{ last ? '' : ' → ' }}
+        }
+        <button type="button" class="link" (click)="clear()">Tout désélectionner</button>
+      } @else {
+        Touchez une ou plusieurs zones, dans l'ordre du trajet du signe.
+      }
+    </p>
+
+    <div class="chips">
+      @for (z of zones(); track z.id) {
+        <button type="button" class="chip" [attr.aria-pressed]="order(z.id) > 0" (click)="toggle(z.id)">
+          @if (order(z.id); as n) {
+            <span class="n">{{ n }}</span>
+          }
+          {{ z.name }}
+        </button>
+      }
+    </div>
+  </div>
+</div>

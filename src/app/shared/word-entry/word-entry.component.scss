@@ -1,0 +1,79 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+input {
+  font: inherit;
+  font-size: 1.1rem;
+  padding: 0.6rem 0.75rem;
+  border: 2px solid var(--color-border);
+  border-radius: 10px;
+
+  &:focus {
+    border-color: var(--color-primary);
+    outline: none;
+  }
+}
+
+ul {
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: min(40vh, 360px);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &[aria-selected='true'] {
+    background: #eef2f7;
+  }
+}
+
+.glyph {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  fill: var(--color-ink);
+
+  &.none {
+    border: 1px dashed var(--color-border);
+    border-radius: 6px;
+  }
+}
+
+.word {
+  font-weight: 600;
+}
+
+small {
+  opacity: 0.6;
+}
+
+.no-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  cursor: pointer;
+}

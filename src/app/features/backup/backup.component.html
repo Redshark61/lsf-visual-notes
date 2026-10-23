@@ -1,0 +1,102 @@
+<section class="backup">
+  <h1>Sauvegarde</h1>
+
+  @if (persisted() === false) {
+    <p class="warning">
+      Votre navigateur n'a pas garanti la conservation des données : il peut les effacer s'il manque de place
+      (notamment sur iPhone/iPad). Installez l'application sur l'écran d'accueil et exportez régulièrement.
+    </p>
+  }
+
+  <section class="card">
+    <h2>Exporter</h2>
+    <p>
+      Téléchargez une copie de vos
+      @if (counts(); as c) {
+        <strong>{{ c.signs }} signe{{ c.signs > 1 ? 's' : '' }}</strong> et
+        <strong>{{ c.notes }} note{{ c.notes > 1 ? 's' : '' }}</strong>
+      } @else {
+        signes et notes
+      }
+      dans un fichier JSON. Rangez-la en lieu sûr (cloud, clé USB) : c'est votre seule copie en dehors de ce
+      navigateur.
+    </p>
+    <div class="row">
+      <button type="button" class="primary" (click)="download()" [disabled]="busy()">Télécharger la sauvegarde</button>
+      @if (canShare) {
+        <button type="button" (click)="share()" [disabled]="busy()">Partager…</button>
+      }
+    </div>
+    @if (exportError(); as e) {
+      <p class="error" role="alert">{{ e }}</p>
+    }
+  </section>
+
+  <section class="card">
+    <h2>Importer</h2>
+    <p>Le fichier est entièrement vérifié avant toute modification de vos données.</p>
+    <input #file type="file" accept=".json,application/json" (change)="onFile(file)" [disabled]="busy()" />
+
+    @if (importErrors().length) {
+      <div class="error" role="alert">
+        <p>Ce fichier ne peut pas être importé :</p>
+        <ul>
+          @for (e of importErrors(); track $index) {
+            <li>{{ e }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    @if (pending(); as p) {
+      <div class="preview">
+        <p>
+          <strong>{{ p.fileName }}</strong> — sauvegarde du {{ p.backup.exportedAt | date: 'medium' }} :
+          {{ p.backup.signs.length }} signe{{ p.backup.signs.length > 1 ? 's' : '' }},
+          {{ p.backup.notes.length }} note{{ p.backup.notes.length > 1 ? 's' : '' }}
+          @if (p.backup.customHandshapes.length) {
+            , {{ p.backup.customHandshapes.length }} configuration{{ p.backup.customHandshapes.length > 1 ? 's' : '' }}
+            personnelle{{ p.backup.customHandshapes.length > 1 ? 's' : '' }}
+          }
+          .
+        </p>
+        <fieldset>
+          <legend>Mode d'import</legend>
+          <label>
+            <input type="radio" name="mode" [checked]="mode() === 'merge'" (change)="mode.set('merge')" />
+            <span><strong>Fusionner</strong> (recommandé) : ajoute les nouveautés ; un élément déjà présent n'est
+              remplacé que si celui du fichier est plus récent.</span>
+          </label>
+          <label>
+            <input type="radio" name="mode" [checked]="mode() === 'replace'" (change)="mode.set('replace')" />
+            <span><strong>Tout remplacer</strong> : efface vos signes, notes et configurations personnelles actuels, puis
+              importe le fichier.</span>
+          </label>
+        </fieldset>
+        <div class="row">
+          <button type="button" class="primary" (click)="confirmImport()" [disabled]="busy()">Importer</button>
+          <button type="button" (click)="cancelImport()" [disabled]="busy()">Annuler</button>
+        </div>
+      </div>
+    }
+
+    @if (report(); as r) {
+      <div class="success" role="status">
+        <p>Import terminé.</p>
+        <ul>
+          @if (r.handshapes.added || r.handshapes.updated || r.handshapes.skipped) {
+            <li>
+              Configurations personnelles : {{ r.handshapes.added }} ajoutée(s), {{ r.handshapes.updated }} mise(s) à
+              jour, {{ r.handshapes.skipped }} ignorée(s)
+            </li>
+          }
+          <li>Signes : {{ r.signs.added }} ajouté(s), {{ r.signs.updated }} mis à jour, {{ r.signs.skipped }} ignoré(s)</li>
+          <li>Notes : {{ r.notes.added }} ajoutée(s), {{ r.notes.updated }} mise(s) à jour, {{ r.notes.skipped }} ignorée(s)</li>
+        </ul>
+        @if (r.signs.skipped || r.notes.skipped) {
+          <p class="small">Les éléments ignorés existaient déjà dans une version identique ou plus récente.</p>
+        }
+      </div>
+    }
+  </section>
+</section>

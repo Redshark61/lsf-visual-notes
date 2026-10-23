@@ -1,0 +1,567 @@
+{
+  "sources": [
+    {
+      "name": "Wikisign LSF — Liste des configurations",
+      "url": "https://lsf.wikisign.org/wiki/Langue:Liste_des_configurations",
+      "license": "CC BY-SA 2.0",
+      "scope": "handshapes"
+    },
+    {
+      "name": "Wikisign LSF — photos des configurations (voir icons/handshapes/wikisign/CREDITS.md)",
+      "url": "https://lsf.wikisign.org/",
+      "license": "CC BY-SA 2.0 fr",
+      "scope": "handshapes"
+    }
+  ],
+  "handshapes": [
+    {
+      "id": "hand_bec_canard_ferme",
+      "name": "Bec canard fermé",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_canard_ferme.jpg"
+    },
+    {
+      "id": "hand_bec_canard_ouvert",
+      "name": "Bec canard ouvert",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_canard_ouvert.jpg"
+    },
+    {
+      "id": "hand_bec_canard_rond",
+      "name": "Bec canard rond",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_canard_rond.jpg"
+    },
+    {
+      "id": "hand_bec_oie_ferme",
+      "name": "Bec oie fermé",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_oie_ferme.jpg"
+    },
+    {
+      "id": "hand_bec_oie_ouvert",
+      "name": "Bec oie ouvert",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_oie_ouvert.jpg"
+    },
+    {
+      "id": "hand_bec_oie_rond",
+      "name": "Bec oie rond",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_oie_rond.jpg"
+    },
+    {
+      "id": "hand_bec_oiseau_ferme",
+      "name": "Bec oiseau fermé",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_oiseau_ferme.jpg"
+    },
+    {
+      "id": "hand_bec_oiseau_ouvert",
+      "name": "Bec oiseau ouvert",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_oiseau_ouvert.jpg"
+    },
+    {
+      "id": "hand_bec_oiseau_rond",
+      "name": "Bec oiseau rond",
+      "category": "Becs",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bec_oiseau_rond.jpg"
+    },
+    {
+      "id": "hand_pince_fermee",
+      "name": "Pince fermée",
+      "category": "Pinces",
+      "imageUrl": "/icons/handshapes/wikisign/hand_pince_fermee.jpg"
+    },
+    {
+      "id": "hand_pince_ouverte",
+      "name": "Pince ouverte",
+      "category": "Pinces",
+      "imageUrl": "/icons/handshapes/wikisign/hand_pince_ouverte.jpg"
+    },
+    {
+      "id": "hand_pince_ronde",
+      "name": "Pince ronde",
+      "category": "Pinces",
+      "imageUrl": "/icons/handshapes/wikisign/hand_pince_ronde.jpg"
+    },
+    {
+      "id": "hand_2",
+      "name": "2",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_2.jpg"
+    },
+    {
+      "id": "hand_3",
+      "name": "3",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_3.jpg"
+    },
+    {
+      "id": "hand_4",
+      "name": "4",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_4.jpg"
+    },
+    {
+      "id": "hand_5",
+      "name": "5",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_5.jpg"
+    },
+    {
+      "id": "hand_2_plie",
+      "name": "2 plié",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_2_plie.jpg"
+    },
+    {
+      "id": "hand_3_plie",
+      "name": "3 plié",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_3_plie.jpg"
+    },
+    {
+      "id": "hand_4_plie",
+      "name": "4 plié",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_4_plie.jpg"
+    },
+    {
+      "id": "hand_5_plie",
+      "name": "5 plié",
+      "category": "Chiffres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_5_plie.jpg"
+    },
+    {
+      "id": "hand_a",
+      "name": "A",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_a.jpg"
+    },
+    {
+      "id": "hand_b",
+      "name": "B",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_b.jpg"
+    },
+    {
+      "id": "hand_c",
+      "name": "C",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_c.jpg"
+    },
+    {
+      "id": "hand_d",
+      "name": "D",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_d.jpg"
+    },
+    {
+      "id": "hand_e",
+      "name": "E",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_e.jpg"
+    },
+    {
+      "id": "hand_f",
+      "name": "F",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_f.jpg"
+    },
+    {
+      "id": "hand_g",
+      "name": "G",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_g.jpg"
+    },
+    {
+      "id": "hand_h",
+      "name": "H",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_h.jpg"
+    },
+    {
+      "id": "hand_i",
+      "name": "I",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_i.jpg"
+    },
+    {
+      "id": "hand_k",
+      "name": "K",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_k.jpg"
+    },
+    {
+      "id": "hand_r",
+      "name": "R",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_r.jpg"
+    },
+    {
+      "id": "hand_s",
+      "name": "S",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_s.jpg"
+    },
+    {
+      "id": "hand_t",
+      "name": "T",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_t.jpg"
+    },
+    {
+      "id": "hand_u",
+      "name": "U",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_u.jpg"
+    },
+    {
+      "id": "hand_v",
+      "name": "V",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_v.jpg"
+    },
+    {
+      "id": "hand_x",
+      "name": "X",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_x.jpg"
+    },
+    {
+      "id": "hand_y",
+      "name": "Y",
+      "category": "Lettres",
+      "imageUrl": "/icons/handshapes/wikisign/hand_y.jpg"
+    },
+    {
+      "id": "hand_angle_droit",
+      "name": "Angle droit",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_angle_droit.jpg"
+    },
+    {
+      "id": "hand_bouche",
+      "name": "Bouche",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_bouche.jpg"
+    },
+    {
+      "id": "hand_cle",
+      "name": "Clé",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_cle.jpg"
+    },
+    {
+      "id": "hand_cone",
+      "name": "Cone",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_cone.jpg"
+    },
+    {
+      "id": "hand_index",
+      "name": "Index",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_index.jpg"
+    },
+    {
+      "id": "hand_index_plie",
+      "name": "Index plié",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_index_plie.jpg"
+    },
+    {
+      "id": "hand_main_plate",
+      "name": "Main plate",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_main_plate.jpg"
+    },
+    {
+      "id": "hand_majeur",
+      "name": "Majeur",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_majeur.jpg"
+    },
+    {
+      "id": "hand_majeur_pouce",
+      "name": "Majeur pouce",
+      "category": "Autres formes"
+    },
+    {
+      "id": "hand_moufle",
+      "name": "Moufle",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_moufle.jpg"
+    },
+    {
+      "id": "hand_pouce",
+      "name": "Pouce",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_pouce.jpg"
+    },
+    {
+      "id": "hand_u_pouce",
+      "name": "U pouce",
+      "category": "Autres formes",
+      "imageUrl": "/icons/handshapes/wikisign/hand_u_pouce.jpg"
+    }
+  ],
+  "zones": [
+    {
+      "id": "zone_neutral",
+      "name": "Espace neutre",
+      "category": "Espace"
+    },
+    {
+      "id": "zone_side_space",
+      "name": "Espace latéral (sur le côté)",
+      "category": "Espace"
+    },
+    {
+      "id": "zone_head",
+      "name": "Sommet de la tête",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_face",
+      "name": "Visage (entier)",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_forehead",
+      "name": "Front",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_temple",
+      "name": "Tempe",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_eyes",
+      "name": "Yeux",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_nose",
+      "name": "Nez",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_mouth",
+      "name": "Bouche",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_chin",
+      "name": "Menton",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_cheek",
+      "name": "Joue",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_ear",
+      "name": "Oreille",
+      "category": "Tête"
+    },
+    {
+      "id": "zone_neck",
+      "name": "Cou",
+      "category": "Corps"
+    },
+    {
+      "id": "zone_shoulder",
+      "name": "Épaule",
+      "category": "Corps"
+    },
+    {
+      "id": "zone_torso",
+      "name": "Poitrine",
+      "category": "Corps"
+    },
+    {
+      "id": "zone_belly",
+      "name": "Ventre / taille",
+      "category": "Corps"
+    },
+    {
+      "id": "zone_arm",
+      "name": "Bras / avant-bras",
+      "category": "Corps"
+    },
+    {
+      "id": "zone_elbow",
+      "name": "Coude",
+      "category": "Corps"
+    },
+    {
+      "id": "zone_wrist",
+      "name": "Poignet",
+      "category": "Corps"
+    },
+    {
+      "id": "zone_other_hand",
+      "name": "Main dominée",
+      "category": "Corps"
+    }
+  ],
+  "movements": [
+    {
+      "id": "move_none",
+      "name": "Aucun (statique)",
+      "category": "Statique"
+    },
+    {
+      "id": "move_straight",
+      "name": "Trajet droit",
+      "category": "Trajectoire",
+      "imageUrl": "/icons/movements/straight.svg"
+    },
+    {
+      "id": "move_arc",
+      "name": "Arc",
+      "category": "Trajectoire"
+    },
+    {
+      "id": "move_circle",
+      "name": "Rotation / cercle",
+      "category": "Trajectoire",
+      "imageUrl": "/icons/movements/circle.svg"
+    },
+    {
+      "id": "move_zigzag",
+      "name": "Zigzag",
+      "category": "Trajectoire"
+    },
+    {
+      "id": "move_wave",
+      "name": "Ondulation",
+      "category": "Trajectoire"
+    },
+    {
+      "id": "move_contact",
+      "name": "Contact",
+      "category": "Contact",
+      "imageUrl": "/icons/movements/contact.svg"
+    },
+    {
+      "id": "move_repeated_contact",
+      "name": "Contacts répétés (tapotement)",
+      "category": "Contact"
+    },
+    {
+      "id": "move_rub",
+      "name": "Frottement",
+      "category": "Contact"
+    },
+    {
+      "id": "move_open",
+      "name": "Ouverture de la main",
+      "category": "Interne"
+    },
+    {
+      "id": "move_close",
+      "name": "Fermeture de la main",
+      "category": "Interne"
+    },
+    {
+      "id": "move_wiggle",
+      "name": "Agitation / pianotement des doigts",
+      "category": "Interne"
+    },
+    {
+      "id": "move_twist",
+      "name": "Rotation du poignet",
+      "category": "Interne"
+    },
+    {
+      "id": "move_finger_rub",
+      "name": "Frottement pouce contre doigts",
+      "category": "Interne"
+    },
+    {
+      "id": "move_wrist_flex",
+      "name": "Battement du poignet",
+      "category": "Interne"
+    },
+    {
+      "id": "move_alternating",
+      "name": "Mouvement alterné des deux mains",
+      "category": "Deux mains"
+    },
+    {
+      "id": "move_symmetric",
+      "name": "Mouvement symétrique des deux mains",
+      "category": "Deux mains"
+    }
+  ],
+  "orientations": [
+    {
+      "id": "orient_palm_down",
+      "name": "Paume vers le bas",
+      "category": "Orientation"
+    },
+    {
+      "id": "orient_palm_up",
+      "name": "Paume vers le haut",
+      "category": "Orientation"
+    },
+    {
+      "id": "orient_palm_self",
+      "name": "Paume vers soi",
+      "category": "Orientation"
+    },
+    {
+      "id": "orient_palm_forward",
+      "name": "Paume vers l'avant (vers l'interlocuteur)",
+      "category": "Orientation"
+    },
+    {
+      "id": "orient_palm_inward",
+      "name": "Paume vers l'autre main (vers le centre)",
+      "category": "Orientation"
+    },
+    {
+      "id": "orient_palm_outward",
+      "name": "Paume vers l'extérieur",
+      "category": "Orientation"
+    }
+  ],
+  "directions": [
+    {
+      "id": "dir_up",
+      "name": "Vers le haut",
+      "category": "Direction"
+    },
+    {
+      "id": "dir_down",
+      "name": "Vers le bas",
+      "category": "Direction"
+    },
+    {
+      "id": "dir_forward",
+      "name": "Vers l'avant (vers l'interlocuteur)",
+      "category": "Direction"
+    },
+    {
+      "id": "dir_toward_self",
+      "name": "Vers soi",
+      "category": "Direction"
+    },
+    {
+      "id": "dir_inward",
+      "name": "Vers le centre (vers l'autre main)",
+      "category": "Direction"
+    },
+    {
+      "id": "dir_outward",
+      "name": "Vers l'extérieur",
+      "category": "Direction"
+    }
+  ]
+}

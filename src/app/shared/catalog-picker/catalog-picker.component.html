@@ -1,0 +1,59 @@
+<fieldset class="picker" [class.cards]="layout() === 'cards'">
+  <legend>
+    {{ label() }} :
+    <strong>{{ selected()?.name ?? (value() === null && noneLabel() ? noneLabel() : '—') }}</strong>
+  </legend>
+
+  @if (items().length > 12) {
+    <input
+      type="search"
+      class="search"
+      placeholder="Filtrer…"
+      [attr.aria-label]="'Filtrer : ' + label()"
+      [value]="query()"
+      (input)="query.set($any($event.target).value)"
+    />
+  }
+
+  <div class="options">
+    @if (noneLabel(); as none) {
+      <button type="button" class="chip none" [attr.aria-pressed]="value() === null" (click)="select(null)">
+        {{ none }}
+      </button>
+    }
+    @for (group of groups(); track group.category) {
+      <div class="group">
+        <span class="category">{{ group.category }}</span>
+        <div class="items">
+          @for (item of group.items; track item.id) {
+            <button
+              type="button"
+              [class]="layout() === 'cards' ? 'card' : 'chip'"
+              [attr.aria-pressed]="item.id === value()"
+              [title]="item.name"
+              (click)="select(item.id)"
+            >
+              @if (layout() === 'cards') {
+                @if (item.imageUrl) {
+                  <img [src]="item.imageUrl" alt="" loading="lazy" />
+                } @else {
+                  <span class="placeholder" [class.short]="item.name.length <= 3" aria-hidden="true">{{
+                    item.name
+                  }}</span>
+                }
+                <span class="caption">{{ item.name }}</span>
+              } @else {
+                @if (item.imageUrl) {
+                  <img [src]="item.imageUrl" alt="" width="28" height="28" />
+                }
+                <span>{{ item.name }}</span>
+              }
+            </button>
+          }
+        </div>
+      </div>
+    } @empty {
+      <p class="empty">Aucun résultat.</p>
+    }
+  </div>
+</fieldset>

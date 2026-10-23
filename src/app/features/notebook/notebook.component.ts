@@ -1,0 +1,384 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { NgTemplateOutlet, PercentPipe } from '@angular/common';
+import { SmartCanvasComponent } from '../../shared/smart-canvas/smart-canvas.component';
+import { SignDialogComponent } from '../../shared/sign-dialog/sign-dialog.component';
+import { WordEntryComponent } from '../../shared/word-entry/word-entry.component';
+import { RecognitionService } from '../../core/services/recognition.service';
+import { MAX_NOTE_TITLE_LENGTH, StorageService } from '../../core/services/storage.service';
+import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
+import { NoteElement, NotePage, Stroke, UserSign } from '../../core/models/sign.model';
+import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
+
+/** Délai après le lever du stylet, pour laisser le temps de tracer un glyphe en plusieurs traits. */
+const RECOGNITION_DEBOUNCE_MS = 450;
+/** Au-dessus : remplacement automatique du tracé par le signe. */
+const AUTO_REPLACE_SCORE = 0.8;
+/** Au-dessus : le signe est proposé en suggestion. */
+const SUGGESTION_SCORE = 0.5;
+/** Dimensions approximatives de la bulle, pour la garder dans l'écran. */
+const BUBBLE_HEIGHT = 110;
+const BUBBLE_HALF_WIDTH = 110;
+
+export type NoteDisplay = 'signs' | 'words' | 'both';
+export type InputMode = 'draw' | 'type';
+
+/** Préférences d'affichage seulement (jamais de signes ni de notes ici). */
+const PREFS_KEY = 'lsf.notebook.prefs';
+
+function readPrefs(): { display: NoteDisplay; inputMode: InputMode } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Record<string, unknown>;
+    return {
+      display: raw['display'] === 'words' || raw['display'] === 'both' ? raw['display'] : 'signs',
+      inputMode: raw['inputMode'] === 'type' ? 'type' : 'draw',
+    };
+  } catch {
+    return { display: 'signs', inputMode: 'draw' };
+  }
+}
+
+interface Candidate {
+  sign: UserSign;
+  score: number;
+}
+
+type Proposal =
+  /** Signe inséré automatiquement ; pastilles pour corriger, ou annuler et rétablir le dessin. */
+  | { kind: 'corrections'; elementId: string; candidates: Candidate[]; strokes: Stroke[] }
+  /** Hésitation : le tracé reste, on propose les 3 signes les plus proches. */
+  | { kind: 'suggestions'; candidates: Candidate[]; strokes: Stroke[] }
+  /** Rien de suffisamment proche. */
+  | { kind: 'none'; strokes: Stroke[] };
+
+@Component({
+  selector: 'app-notebook',
+  imports: [SmartCanvasComponent, SignDialogComponent, WordEntryComponent, NgTemplateOutlet, PercentPipe, RouterLink],
+  host: {
+    '(document:click)': 'onDocumentClick($event)',
+    '(document:keydown.escape)': 'closeBubble()',
+    '(window:resize)': 'closeBubble()',
+  },
+  templateUrl: './notebook.component.html',
+  styleUrl: './notebook.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class NotebookComponent {
+  private readonly storage = inject(StorageService);
+  private readonly recognition = inject(RecognitionService);
+  private readonly transfer = inject(SignDraftTransferService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+
+  private readonly injector = inject(Injector);
+
+  /** Absent en mode écrit. */
+  private readonly canvas = viewChild(SmartCanvasComponent);
+  private readonly wordEntry = viewChild(WordEntryComponent);
+
+  protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
+  protected readonly maxTitleLength = MAX_NOTE_TITLE_LENGTH;
+
+  protected readonly notes = signal<NotePage[]>([]);
+  protected readonly note = signal<NotePage | null>(null);
+  /** Signes connus de la page (éléments de la note + candidats proposés). */
+  protected readonly signs = signal<ReadonlyMap<string, UserSign>>(new Map());
+  protected readonly glyphSigns = computed(() => [...this.signs().values()].filter((s) => s.glyph));
+  protected readonly proposal = signal<Proposal | null>(null);
+  protected readonly recognizing = signal(false);
+  protected readonly selectedId = signal<string | null>(null);
+  /** Bulle (nom + actions) du signe sélectionné, en coordonnées écran. */
+  protected readonly bubble = signal<{ x: number; y: number; above: boolean } | null>(null);
+  /** Signe affiché dans la fenêtre de définition. */
+  protected readonly detail = signal<UserSign | null>(null);
+  protected readonly lastInsertedId = signal<string | null>(null);
+  protected readonly error = signal<string | null>(null);
+
+  // --- Bascules dessin / écrit
+  protected readonly display = signal<NoteDisplay>(readPrefs().display);
+  protected readonly displayOptions: { value: NoteDisplay; label: string }[] = [
+    { value: 'signs', label: 'Signes' },
+    { value: 'words', label: 'Mots' },
+    { value: 'both', label: 'Les deux' },
+  ];
+  protected readonly inputMode = signal<InputMode>(readPrefs().inputMode);
+  /** Tout le dictionnaire, chargé pour la saisie écrite. */
+  protected readonly allSigns = signal<UserSign[]>([]);
+
+  private debounce: ReturnType<typeof setTimeout> | undefined;
+  private request = 0;
+  private saveChain: Promise<unknown> = Promise.resolve();
+
+  constructor() {
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed())
+      .subscribe((params) => this.open(params.get('note')).catch((e) => this.error.set(String(e))));
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.debounce));
+    effect(() => {
+      const prefs = { display: this.display(), inputMode: this.inputMode() };
+      try {
+        localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+      } catch {
+        // stockage indisponible (navigation privée) : préférences non conservées
+      }
+    });
+    if (this.inputMode() === 'type') this.loadAllSigns();
+  }
+
+  // --- Bascules
+
+  protected setInputMode(mode: InputMode): void {
+    if (mode === this.inputMode()) return;
+    this.resetRecognition();
+    this.inputMode.set(mode);
+    if (mode === 'type') {
+      this.loadAllSigns();
+      afterNextRender(() => this.wordEntry()?.focus(), { injector: this.injector });
+    }
+  }
+
+  private loadAllSigns(): void {
+    this.storage
+      .listSigns()
+      .then((signs) => {
+        this.allSigns.set(signs);
+        this.signs.update((m) => new Map([...m, ...signs.map((s) => [s.id, s] as const)]));
+      })
+      .catch((e) => this.error.set(`Impossible de lire le dictionnaire : ${e}`));
+  }
+
+  protected createFromWord(word: string): void {
+    const note = this.note();
+    if (!note || !word) return;
+    this.transfer.offerDraft({ noteId: note.id, word });
+    this.router.navigate(['/atelier']);
+  }
+
+  // --- Notes
+
+  private async open(requestedId: string | null): Promise<void> {
+    this.resetRecognition();
+    let notes = await this.storage.listNotes();
+    let note = (requestedId && notes.find((n) => n.id === requestedId)) || notes[0];
+    if (!note) {
+      note = await this.storage.createNote();
+      notes = [note];
+    }
+    if (note.id !== requestedId) {
+      // URL canonique : la note ouverte est toujours dans ?note=
+      this.router.navigate([], { queryParams: { note: note.id }, replaceUrl: true });
+    }
+    this.notes.set(notes);
+    this.note.set(note);
+    this.closeBubble();
+    await this.loadSigns(note.elements.map((e) => e.signId));
+
+    // Retour de l'Atelier après « Créer un nouveau signe à partir de ce dessin ».
+    const created = this.transfer.takeCreated(note.id);
+    if (created) {
+      await this.loadSigns([created]);
+      this.insert(created);
+    }
+  }
+
+  protected switchNote(id: string): void {
+    this.router.navigate([], { queryParams: { note: id } });
+  }
+
+  protected async newNote(): Promise<void> {
+    const note = await this.storage.createNote();
+    this.switchNote(note.id);
+  }
+
+  protected async deleteNote(): Promise<void> {
+    const note = this.note();
+    if (!note || !confirm(`Supprimer la note « ${note.title} » ?`)) return;
+    await this.saveChain;
+    await this.storage.deleteNote(note.id);
+    this.note.set(null);
+    this.router.navigate([], { queryParams: { note: null } });
+  }
+
+  protected rename(title: string): void {
+    this.update((n) => ({ ...n, title }));
+  }
+
+  /** Applique une modification à la note courante et l'enregistre (écritures sérialisées). */
+  private update(change: (note: NotePage) => NotePage): void {
+    const current = this.note();
+    if (!current) return;
+    const next = change(current);
+    this.note.set(next);
+    this.saveChain = this.saveChain
+      .then(() => this.storage.saveNote(next))
+      .then((saved) => {
+        if (this.note()?.id === saved.id) this.note.update((n) => (n ? { ...n, title: saved.title } : n));
+        this.notes.update((list) => [saved, ...list.filter((n) => n.id !== saved.id)]);
+      })
+      .catch((e) => this.error.set(`Échec de l'enregistrement : ${e}`));
+  }
+
+  private async loadSigns(ids: string[]): Promise<void> {
+    const missing = ids.filter((id) => !this.signs().has(id));
+    if (!missing.length) return;
+    const found = await this.storage.getSigns(missing);
+    this.signs.update((m) => new Map([...m, ...found]));
+  }
+
+  // --- Éléments
+
+  protected insert(signId: string): string {
+    const element: NoteElement = { id: crypto.randomUUID(), signId, orderIndex: 0 };
+    this.update((n) => ({ ...n, elements: [...n.elements, element] }));
+    this.lastInsertedId.set(element.id);
+    return element.id;
+  }
+
+  protected select(id: string, event: MouseEvent): void {
+    if (this.selectedId() === id) {
+      this.closeBubble();
+      return;
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const above = rect.bottom + BUBBLE_HEIGHT > window.innerHeight;
+    const margin = BUBBLE_HALF_WIDTH + 8;
+    this.selectedId.set(id);
+    this.bubble.set({
+      x: Math.min(Math.max(rect.left + rect.width / 2, margin), window.innerWidth - margin),
+      y: above ? rect.top - 6 : rect.bottom + 6,
+      above,
+    });
+  }
+
+  protected closeBubble(): void {
+    this.selectedId.set(null);
+    this.bubble.set(null);
+  }
+
+  protected onDocumentClick(event: MouseEvent): void {
+    const target = event.target as Element | null;
+    if (this.selectedId() && !target?.closest('.element, .bubble, dialog')) this.closeBubble();
+  }
+
+  protected openDetail(sign: UserSign): void {
+    this.closeBubble();
+    this.detail.set(sign);
+  }
+
+  /** Supprime l'élément sélectionné, à défaut le dernier. */
+  protected removeElement(): void {
+    const elements = this.note()?.elements ?? [];
+    const id = this.selectedId() ?? elements.at(-1)?.id;
+    if (!id) return;
+    this.update((n) => ({ ...n, elements: n.elements.filter((e) => e.id !== id) }));
+    this.closeBubble();
+    const p = this.proposal();
+    if (p?.kind === 'corrections' && p.elementId === id) this.proposal.set(null);
+  }
+
+  // --- Reconnaissance
+
+  protected onStrokeStart(): void {
+    clearTimeout(this.debounce);
+    this.request++; // un résultat en cours ne s'applique plus
+    this.recognizing.set(false);
+    this.proposal.set(null);
+  }
+
+  protected onStrokesChange(strokes: Stroke[]): void {
+    clearTimeout(this.debounce);
+    const request = ++this.request;
+    this.recognizing.set(false);
+    if (strokes.length === 0) {
+      this.proposal.set(null);
+      return;
+    }
+    this.debounce = setTimeout(() => this.recognize(strokes, request), RECOGNITION_DEBOUNCE_MS);
+  }
+
+  private async recognize(strokes: Stroke[], request: number): Promise<void> {
+    this.recognizing.set(true);
+    try {
+      const { matches } = await this.recognition.recognize(strokes);
+      await this.loadSigns(matches.map((m) => m.signId));
+      if (request !== this.request) return;
+      const candidates = matches
+        .map((m) => ({ sign: this.signs().get(m.signId), score: m.score }))
+        .filter((c): c is Candidate => !!c.sign);
+      const best = candidates[0];
+
+      if (best && best.score > AUTO_REPLACE_SCORE) {
+        const elementId = this.insert(best.sign.id);
+        this.canvas()?.clear();
+        this.proposal.set({ kind: 'corrections', elementId, candidates, strokes });
+      } else if (best && best.score >= SUGGESTION_SCORE) {
+        this.proposal.set({ kind: 'suggestions', candidates, strokes });
+      } else {
+        this.proposal.set({ kind: 'none', strokes });
+      }
+    } catch (e) {
+      if (request === this.request) this.error.set(`Reconnaissance impossible : ${e}`);
+    } finally {
+      if (request === this.request) this.recognizing.set(false);
+    }
+  }
+
+  /** Pastille de correction : remplace le signe inséré automatiquement. */
+  protected correct(elementId: string, signId: string): void {
+    this.update((n) => ({ ...n, elements: n.elements.map((e) => (e.id === elementId ? { ...e, signId } : e)) }));
+    this.proposal.set(null);
+  }
+
+  /** Annule l'insertion automatique et rétablit le dessin, avec les suggestions. */
+  protected undoAutoInsert(): void {
+    const p = this.proposal();
+    if (p?.kind !== 'corrections') return;
+    this.update((n) => ({ ...n, elements: n.elements.filter((e) => e.id !== p.elementId) }));
+    this.canvas()?.setStrokes(p.strokes);
+    this.proposal.set({ kind: 'suggestions', candidates: p.candidates, strokes: p.strokes });
+  }
+
+  protected chooseSuggestion(signId: string): void {
+    this.insert(signId);
+    this.canvas()?.clear();
+    this.proposal.set(null);
+  }
+
+  protected discardDrawing(): void {
+    this.canvas()?.clear();
+    this.proposal.set(null);
+  }
+
+  protected createFromDrawing(strokes: Stroke[]): void {
+    const note = this.note();
+    if (!note) return;
+    this.transfer.offerDraft({ noteId: note.id, strokes });
+    this.router.navigate(['/atelier']);
+  }
+
+  /** Candidats autres que le signe inséré (pastilles de correction). */
+  protected alternatives(p: { candidates: Candidate[]; elementId: string }): Candidate[] {
+    const inserted = this.note()?.elements.find((e) => e.id === p.elementId)?.signId;
+    return p.candidates.filter((c) => c.sign.id !== inserted);
+  }
+
+  private resetRecognition(): void {
+    clearTimeout(this.debounce);
+    this.request++;
+    this.recognizing.set(false);
+    this.proposal.set(null);
+    this.error.set(null);
+  }
+}

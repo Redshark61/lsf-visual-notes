@@ -1,0 +1,185 @@
+<!-- Glyphes déclarés une fois, réutilisés via <use> -->
+<svg class="sprite" aria-hidden="true">
+  <defs>
+    @for (sign of glyphSigns(); track sign.id) {
+      <symbol [attr.id]="'glyph-' + sign.id" [attr.viewBox]="viewBox">
+        <path [attr.d]="sign.glyph!.svgPathData" />
+      </symbol>
+    }
+  </defs>
+</svg>
+
+<ng-template #glyph let-sign>
+  @if (sign?.glyph) {
+    <svg class="glyph" aria-hidden="true"><use [attr.href]="'#glyph-' + sign.id" /></svg>
+  } @else {
+    <span class="glyph word-only" aria-hidden="true">{{ sign?.word ?? '?' }}</span>
+  }
+</ng-template>
+
+<section class="notebook">
+  <header class="toolbar">
+    <label class="sr-only" for="note-select">Note</label>
+    <select id="note-select" (change)="switchNote($any($event.target).value)">
+      @for (n of notes(); track n.id) {
+        <option [value]="n.id" [selected]="n.id === note()?.id">{{ n.title }}</option>
+      }
+    </select>
+    <button type="button" (click)="newNote()">Nouvelle note</button>
+    <button type="button" class="danger" (click)="deleteNote()" [disabled]="!note()">Supprimer la note</button>
+  </header>
+
+  @if (note(); as n) {
+    <div class="title-row">
+    <input
+      class="title"
+      aria-label="Titre de la note"
+      [maxLength]="maxTitleLength"
+      [value]="n.title"
+      (change)="rename($any($event.target).value)"
+    />
+      <div class="segmented" role="radiogroup" aria-label="Affichage de la note">
+        @for (opt of displayOptions; track opt.value) {
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="display() === opt.value"
+            (click)="display.set(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <div
+      class="page"
+      [class]="'display-' + display()"
+      role="list"
+      aria-label="Contenu de la note"
+      (scroll)="closeBubble()"
+    >
+      @for (el of n.elements; track el.id) {
+        @let sign = signs().get(el.signId);
+        <div role="listitem" class="item">
+          <button
+            type="button"
+            class="element"
+            [class.selected]="selectedId() === el.id"
+            [class.fresh]="lastInsertedId() === el.id"
+            [attr.aria-expanded]="selectedId() === el.id"
+            [title]="sign?.word ?? 'Signe supprimé'"
+            (click)="select(el.id, $event)"
+          >
+            @if (display() !== 'words') {
+              <ng-container *ngTemplateOutlet="glyph; context: { $implicit: sign }" />
+            }
+            <span [class]="display() === 'signs' ? 'sr-only' : 'caption'">{{ sign?.word ?? 'Signe supprimé' }}</span>
+          </button>
+          @if (selectedId() === el.id && bubble(); as b) {
+            <div
+              class="bubble"
+              [class.above]="b.above"
+              [style.left.px]="b.x"
+              [style.top.px]="b.y"
+              role="group"
+              [attr.aria-label]="sign?.word ?? 'Signe supprimé'"
+            >
+              <strong class="word">{{ sign?.word ?? 'Signe supprimé' }}</strong>
+              <div class="bubble-actions">
+                @if (sign) {
+                  <button type="button" (click)="openDetail(sign)">Voir la définition</button>
+                }
+                <button type="button" class="link danger" (click)="removeElement()">Retirer de la note</button>
+              </div>
+            </div>
+          }
+        </div>
+      } @empty {
+        <p class="empty">
+          @if (inputMode() === 'draw') {
+            Dessinez un glyphe ci-dessous : il sera remplacé par le signe de votre dictionnaire.
+          } @else {
+            Écrivez un mot ci-dessous pour insérer le signe correspondant.
+          }
+        </p>
+      }
+    </div>
+
+    <div class="page-actions">
+      <button type="button" (click)="removeElement()" [disabled]="!n.elements.length">
+        {{ selectedId() ? 'Supprimer le signe sélectionné' : 'Supprimer le dernier signe' }}
+      </button>
+    </div>
+  }
+
+  <div class="input-zone">
+    <div class="segmented" role="radiogroup" aria-label="Mode de saisie">
+      <button type="button" role="radio" [attr.aria-checked]="inputMode() === 'draw'" (click)="setInputMode('draw')">
+        Dessiner
+      </button>
+      <button type="button" role="radio" [attr.aria-checked]="inputMode() === 'type'" (click)="setInputMode('type')">
+        Écrire
+      </button>
+    </div>
+
+    @if (inputMode() === 'type') {
+      <app-word-entry
+        [signs]="allSigns()"
+        (pick)="insert($event)"
+        (create)="createFromWord($event)"
+      />
+    } @else {
+    @if (proposal(); as p) {
+      <div class="proposal" role="status">
+        @switch (p.kind) {
+          @case ('corrections') {
+            @if (alternatives(p); as alts) {
+              @if (alts.length) {
+                <span class="label">Plutôt :</span>
+                @for (c of alts; track c.sign.id) {
+                  <button type="button" class="candidate small" (click)="correct(p.elementId, c.sign.id)">
+                    <ng-container *ngTemplateOutlet="glyph; context: { $implicit: c.sign }" />
+                    <span>{{ c.sign.word }}</span>
+                  </button>
+                }
+              }
+            }
+            <button type="button" class="link" (click)="undoAutoInsert()">Annuler et rétablir le dessin</button>
+          }
+          @case ('suggestions') {
+            <span class="label">Vouliez-vous dire :</span>
+            @for (c of p.candidates; track c.sign.id) {
+              <button type="button" class="candidate" (click)="chooseSuggestion(c.sign.id)">
+                <ng-container *ngTemplateOutlet="glyph; context: { $implicit: c.sign }" />
+                <span>{{ c.sign.word }}</span>
+                <small>{{ c.score | percent }}</small>
+              </button>
+            }
+            <button type="button" (click)="createFromDrawing(p.strokes)">Créer un nouveau signe à partir de ce dessin</button>
+            <button type="button" class="link" (click)="discardDrawing()">Effacer le dessin</button>
+          }
+          @case ('none') {
+            <span class="label">Aucun signe reconnu.</span>
+            <button type="button" (click)="createFromDrawing(p.strokes)">Créer un nouveau signe à partir de ce dessin</button>
+            <button type="button" class="link" (click)="discardDrawing()">Effacer le dessin</button>
+          }
+        }
+      </div>
+    } @else if (recognizing()) {
+      <div class="proposal muted" role="status">Reconnaissance…</div>
+    }
+
+    @if (error(); as e) {
+      <p class="error" role="alert">{{ e }}</p>
+    }
+
+    <app-smart-canvas class="pad" (strokeStart)="onStrokeStart()" (strokesChange)="onStrokesChange($event)" />
+    }
+    <p class="hint">
+      Votre dictionnaire est vide ou incomplet ? <a routerLink="/atelier">Ajoutez des signes dans l'Atelier</a>.
+    </p>
+  </div>
+</section>
+
+<app-sign-dialog [sign]="detail()" (closed)="detail.set(null)" />

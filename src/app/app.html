@@ -1,0 +1,13 @@
+<header class="app-header">
+  <span class="brand">LSF Notes</span>
+  <nav>
+    <a routerLink="/carnet" routerLinkActive="active">Carnet</a>
+    <a routerLink="/dictionnaire" routerLinkActive="active">Dictionnaire</a>
+    <a routerLink="/atelier" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Atelier</a>
+    <a routerLink="/sauvegarde" routerLinkActive="active">Sauvegarde</a>
+  </nav>
+</header>
+<app-install-banner />
+<main>
+  <router-outlet />
+</main>

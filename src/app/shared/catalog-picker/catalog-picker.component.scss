@@ -1,0 +1,136 @@
+.picker {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin: 0;
+  min-width: 0;
+}
+
+legend {
+  padding: 0 0.25rem;
+  font-size: 0.9rem;
+}
+
+.search {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+}
+
+.options {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.cards .options {
+  max-height: min(42vh, 420px);
+}
+
+.group + .group {
+  margin-top: 0.75rem;
+}
+
+.category {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  margin-bottom: 0.25rem;
+}
+
+.items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.cards .items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.5rem;
+}
+
+button {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+
+  &[aria-pressed='true'] {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+
+  &[aria-pressed='true'] {
+    background: var(--color-primary);
+    color: #fff;
+
+    img {
+      filter: invert(1);
+    }
+  }
+
+  &.none {
+    margin-bottom: 0.5rem;
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  border-radius: 10px;
+
+  img,
+  .placeholder {
+    aspect-ratio: 1;
+    width: 100%;
+    object-fit: contain;
+    border-radius: 6px;
+  }
+
+  .placeholder {
+    display: grid;
+    place-items: center;
+    padding: 0.25rem;
+    background: #eef2f7;
+    font-size: 0.8rem;
+    line-height: 1.15;
+    text-align: center;
+
+    &.short {
+      font-size: 1.9rem;
+      font-weight: 600;
+    }
+  }
+
+  .caption {
+    font-size: 0.8rem;
+    text-align: center;
+  }
+
+  &[aria-pressed='true'] .placeholder {
+    background: var(--color-primary);
+    color: #fff;
+  }
+}
+
+.empty {
+  margin: 0;
+  opacity: 0.65;
+}

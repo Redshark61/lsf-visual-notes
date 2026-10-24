@@ -1,7 +1,7 @@
 <fieldset class="picker" [class.cards]="layout() === 'cards'">
   <legend>
     {{ label() }} :
-    <strong>{{ selected()?.name ?? (value() === null && noneLabel() ? noneLabel() : '—') }}</strong>
+    <strong>{{ selectedLabel() }}</strong>
   </legend>
 
   @if (items().length > 12) {
@@ -29,7 +29,7 @@
             <button
               type="button"
               [class]="layout() === 'cards' ? 'card' : 'chip'"
-              [attr.aria-pressed]="item.id === value()"
+              [attr.aria-pressed]="isSelected(item.id)"
               [title]="item.name"
               (click)="select(item.id)"
             >

@@ -3,7 +3,7 @@
   <defs>
     @for (sign of glyphSigns(); track sign.id) {
       <symbol [attr.id]="'glyph-' + sign.id" [attr.viewBox]="viewBox">
-        <path [attr.d]="sign.glyph!.svgPathData" />
+        @for (p of sign.glyph! | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}
       </symbol>
     }
   </defs>
@@ -31,14 +31,25 @@
 
   @if (note(); as n) {
     <div class="title-row">
-    <input
-      class="title"
-      aria-label="Titre de la note"
-      [maxLength]="maxTitleLength"
-      [value]="n.title"
-      (change)="rename($any($event.target).value)"
-    />
-      <div class="segmented" role="radiogroup" aria-label="Affichage de la note">
+      <app-note-title
+        [title]="n.title"
+        [maxLength]="maxTitleLength"
+        [startEditing]="justCreatedId() === n.id"
+        (renamed)="rename($event)"
+      />
+      <div class="segmented" role="radiogroup" aria-label="Disposition de la note">
+        @for (opt of layoutOptions; track opt.value) {
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="(n.layout ?? 'linear') === opt.value"
+            (click)="setLayout(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        }
+      </div>
+      <div class="segmented" role="radiogroup" aria-label="Affichage des signes">
         @for (opt of displayOptions; track opt.value) {
           <button
             type="button"
@@ -52,6 +63,20 @@
       </div>
     </div>
 
+    @if (isMap()) {
+      <app-mind-map
+        class="map"
+        [map]="n.map ?? { nodes: [], links: [] }"
+        [signs]="signs()"
+        [display]="display()"
+        [(selectedNodeId)]="selectedNodeId"
+        [selectedElementId]="selectedId()"
+        [freshElementId]="lastInsertedId()"
+        (mapChange)="onMapChange($event)"
+        (elementClick)="select($event.elementId, $event.event)"
+        (scrolled)="closeBubble()"
+      />
+    } @else {
     <div
       class="page"
       [class]="'display-' + display()"
@@ -76,24 +101,6 @@
             }
             <span [class]="display() === 'signs' ? 'sr-only' : 'caption'">{{ sign?.word ?? 'Signe supprimé' }}</span>
           </button>
-          @if (selectedId() === el.id && bubble(); as b) {
-            <div
-              class="bubble"
-              [class.above]="b.above"
-              [style.left.px]="b.x"
-              [style.top.px]="b.y"
-              role="group"
-              [attr.aria-label]="sign?.word ?? 'Signe supprimé'"
-            >
-              <strong class="word">{{ sign?.word ?? 'Signe supprimé' }}</strong>
-              <div class="bubble-actions">
-                @if (sign) {
-                  <button type="button" (click)="openDetail(sign)">Voir la définition</button>
-                }
-                <button type="button" class="link danger" (click)="removeElement()">Retirer de la note</button>
-              </div>
-            </div>
-          }
         </div>
       } @empty {
         <p class="empty">
@@ -105,9 +112,30 @@
         </p>
       }
     </div>
+    }
+
+    @if (bubble(); as b) {
+      @let sign = selectedSign();
+      <div
+        class="bubble"
+        [class.above]="b.above"
+        [style.left.px]="b.x"
+        [style.top.px]="b.y"
+        role="group"
+        [attr.aria-label]="sign?.word ?? 'Signe supprimé'"
+      >
+        <strong class="word">{{ sign?.word ?? 'Signe supprimé' }}</strong>
+        <div class="bubble-actions">
+          @if (sign) {
+            <button type="button" (click)="openDetail(sign)">Voir la définition</button>
+          }
+          <button type="button" class="link danger" (click)="removeElement()">Retirer de la note</button>
+        </div>
+      </div>
+    }
 
     <div class="page-actions">
-      <button type="button" (click)="removeElement()" [disabled]="!n.elements.length">
+      <button type="button" (click)="removeElement()" [disabled]="!hasElements()">
         {{ selectedId() ? 'Supprimer le signe sélectionné' : 'Supprimer le dernier signe' }}
       </button>
     </div>
@@ -175,6 +203,10 @@
     }
 
     <app-smart-canvas class="pad" (strokeStart)="onStrokeStart()" (strokesChange)="onStrokesChange($event)" />
+    <div class="canvas-actions">
+      <button type="button" (click)="undoStroke()" [disabled]="!drawnStrokes()" title="Ctrl+Z">Annuler le trait</button>
+      <button type="button" (click)="discardDrawing()" [disabled]="!drawnStrokes()">Effacer</button>
+    </div>
     }
     <p class="hint">
       Votre dictionnaire est vide ou incomplet ? <a routerLink="/atelier">Ajoutez des signes dans l'Atelier</a>.

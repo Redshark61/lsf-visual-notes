@@ -2,7 +2,7 @@
   @if (saved(); as sign) {
     <div class="done" role="status">
       @if (sign.glyph) {
-        <svg class="glyph big" [attr.viewBox]="viewBox" aria-hidden="true"><path [attr.d]="sign.glyph.svgPathData" /></svg>
+        <svg class="glyph big" [attr.viewBox]="viewBox" aria-hidden="true">@for (p of sign.glyph | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}</svg>
       }
       <h1 tabindex="-1" #stepHeading>
         @if (editing()) {
@@ -75,25 +75,61 @@
           <p class="hint">
             Dessinez le glyphe rapide qui servira de raccourci dans le Carnet. Pour un simple lexique, passez cette étape.
           </p>
-          @if (keptGlyph(); as kept) {
-            @if (strokes().length === 0) {
-              <div class="kept">
-                <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Dessin actuel"><path [attr.d]="kept.svgPathData" /></svg>
-                <span>Dessin actuel. Dessinez ci-dessous pour le remplacer.</span>
-                <button type="button" class="link" (click)="removeGlyph()">Retirer le dessin</button>
-              </div>
-            }
+          <div class="row tools">
+            <app-color-palette label="Couleur du pinceau :" [(value)]="brushColor" />
+            <label class="check">
+              <input type="checkbox" [checked]="simplify()" (change)="toggleSimplify($any($event.target).checked)" />
+              Simplifier les traits <small>(lignes droites, cercles, arcs)</small>
+            </label>
+          </div>
+          @if (keptGlyph() && strokes().length === 0) {
+            <p class="kept">
+              Dessin actuel conservé (aperçu ci-dessous). Dessinez sur le canevas pour le remplacer.
+              <button type="button" class="link" (click)="removeGlyph()">Retirer le dessin</button>
+            </p>
           }
           <app-smart-canvas
             class="pad"
             [initialStrokes]="strokes()"
+            [initialColors]="strokeColors()"
+            [brushColor]="brushColor()"
+            [simplify]="simplify()"
             (strokeStart)="onStrokeStart()"
+            (strokeSimplified)="onStrokeSimplified($event)"
             (strokesChange)="onStrokesChange($event)"
           />
           <div class="row">
             <button type="button" (click)="undo()" [disabled]="!strokes().length">Annuler le trait</button>
             <button type="button" (click)="clearDrawing()" [disabled]="!strokes().length">Effacer</button>
+            @if (lastSimplified(); as ls) {
+              <span class="simplified" role="status">
+                Trait simplifié {{ ls.label }}.
+                <button type="button" class="link" (click)="keepOriginal()">Garder le tracé original</button>
+              </span>
+            }
           </div>
+          @if (previewPaths().length) {
+            <div class="recolor">
+              <svg class="glyph preview" [attr.viewBox]="viewBox" role="group" aria-label="Aperçu dans les notes">
+                @for (p of previewPaths(); track $index; let i = $index) {
+                  <path
+                    [attr.d]="p.d"
+                    [attr.fill]="p.color"
+                    role="button"
+                    tabindex="0"
+                    [attr.aria-label]="'Trait ' + (i + 1) + ' : appliquer la couleur du pinceau'"
+                    (click)="recolor(i)"
+                    (keydown.enter)="recolor(i)"
+                    (keydown.space)="$event.preventDefault(); recolor(i)"
+                  />
+                }
+              </svg>
+              <p class="hint">
+                Aperçu dans les notes. Touchez un trait pour lui donner la couleur du pinceau (le Carnet reconnaît la
+                forme, pas la couleur).
+              </p>
+            </div>
+          }
           @if (confusable().length) {
             <p class="warning" role="status">
               Ce glyphe ressemble beaucoup à
@@ -131,46 +167,27 @@
 
         @case ('dominant') {
           @if (catalog.catalog()) {
-            <app-catalog-picker
-              label="Configuration"
-              layout="cards"
-              [items]="catalog.handshapes()"
-              [value]="dominantHandId()"
-              (valueChange)="setDominantHand($event)"
-            />
-            <app-handshape-photo (created)="setDominantHand($event)" />
-            <app-hand-params
-              #movementPicker
-              [(movementId)]="dominantMovementId"
-              [(directionId)]="dominantDirectionId"
-              [(repeated)]="dominantRepeated"
-              [(orientationId)]="dominantOrientationId"
-            />
-            <ng-container *ngTemplateOutlet="sources" />
+            <app-hand-editor [(hand)]="dominant" />
           }
         }
 
         @case ('nonDominant') {
-          @if (catalog.catalog()) {
-            <app-catalog-picker
-              label="Configuration"
-              layout="cards"
-              noneLabel="Aucune (signe à une main)"
-              [items]="catalog.handshapes()"
-              [value]="nonDominantHandId()"
-              (valueChange)="setNonDominantHand($event)"
-            />
-            <app-handshape-photo (created)="setNonDominantHand($event)" />
-            @if (nonDominantHandId()) {
-              <app-hand-params
-                #movementPicker
-                [(movementId)]="nonDominantMovementId"
-                [(directionId)]="nonDominantDirectionId"
-                [(repeated)]="nonDominantRepeated"
-                [(orientationId)]="nonDominantOrientationId"
-              />
+          <div class="segmented" role="radiogroup" aria-label="Nombre de mains">
+            <button type="button" role="radio" [attr.aria-checked]="!nonDominant()" (click)="setTwoHands(false)">
+              Signe à une main
+            </button>
+            <button type="button" role="radio" [attr.aria-checked]="!!nonDominant()" (click)="setTwoHands(true)">
+              Deux mains
+            </button>
+          </div>
+          @if (catalog.catalog() && nonDominant(); as hand) {
+            @if (mirroredFromDominant()) {
+              <p class="info" role="status">
+                Signe symétrique : la main dominée reprend la main dominante. Modifiez-la si besoin.
+              </p>
             }
-            <ng-container *ngTemplateOutlet="sources" />
+            <app-hands-preview [dominant]="dominant()" [nonDominant]="hand" />
+            <app-hand-editor [hand]="hand" (handChange)="nonDominant.set($event)" />
           }
         }
 
@@ -210,11 +227,18 @@
           }
 
           <h2>Récapitulatif</h2>
+          @if (dominant().handshapeIds.length) {
+            <app-hands-preview [dominant]="dominant()" [nonDominant]="nonDominant()" />
+          }
           <dl class="recap">
             <dt>Dessin</dt>
             <dd>
               @if (glyph(); as g) {
-                <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Glyphe"><path [attr.d]="g.svgPathData" /></svg>
+                <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Glyphe">
+                  @for (p of previewPaths(); track $index) {
+                    <path [attr.d]="p.d" [attr.fill]="p.color" />
+                  }
+                </svg>
               } @else {
                 Aucun (lexique seul)
               }
@@ -226,16 +250,12 @@
             </dd>
             <dt>Main dominante</dt>
             <dd>
-              {{ catalogName(dominantHandId()) }} · {{ dominantSummary() }}
+              {{ dominantSummary() }}
               <button type="button" class="link" (click)="goTo(2)">Modifier</button>
             </dd>
             <dt>Main dominée</dt>
             <dd>
-              @if (nonDominantHandId()) {
-                {{ catalogName(nonDominantHandId()) }} · {{ nonDominantSummary() }}
-              } @else {
-                Aucune
-              }
+              {{ nonDominantSummary() }}
               <button type="button" class="link" (click)="goTo(3)">Modifier</button>
             </dd>
             <dt>Emplacement</dt>
@@ -266,20 +286,20 @@
         @if (blocker(); as b) {
           <span class="blocker" role="status">{{ b }}</span>
         }
-        <button type="button" class="primary" (click)="next()" [disabled]="!canAdvance()">
-          {{ step().optional && stepIsEmpty() ? 'Passer cette étape' : 'Suivant' }}
-        </button>
+        @if (editing() && reachable()[steps.length - 1]) {
+          <!-- Modification : inutile de parcourir toutes les étapes pour enregistrer. -->
+          <span class="nav-end">
+            <button type="button" (click)="next()" [disabled]="!canAdvance()">Suivant</button>
+            <button type="button" class="primary" (click)="save()" [disabled]="saving()">
+              {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+            </button>
+          </span>
+        } @else {
+          <button type="button" class="primary" (click)="next()" [disabled]="!canAdvance()">
+            {{ step().optional && stepIsEmpty() ? 'Passer cette étape' : 'Suivant' }}
+          </button>
+        }
       }
     </footer>
   }
 </section>
-
-<ng-template #sources>
-  @for (source of handshapeSources(); track source.url) {
-    <p class="source">
-      Configurations : <a [href]="source.url" target="_blank" rel="noopener">{{ source.name }}</a> ({{
-        source.license
-      }})
-    </p>
-  }
-</ng-template>

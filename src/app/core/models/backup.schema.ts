@@ -2,7 +2,10 @@ import * as z from 'zod/mini';
 import { fr } from 'zod/locales';
 import { CUSTOM_HANDSHAPE_ID_PATTERN, Catalog } from './catalog.model';
 import { BACKUP_FORMAT, BACKUP_VERSION, Backup, SUPPORTED_BACKUP_VERSIONS } from './backup.model';
-import { NORMALIZED_POINT_COUNT, MAX_BOUNDING_BOX_RATIO } from '../utils/gesture-geometry';
+import { SUPPORTED_POINT_COUNTS, MAX_BOUNDING_BOX_RATIO } from '../utils/gesture-geometry';
+import { isSignV2, migrateSignV2 } from '../db/migrations';
+import { MAX_HANDSHAPE_SEQUENCE, MIND_MAP_HEIGHT, MIND_MAP_WIDTH } from './sign.model';
+import { GLYPH_COLOR_PATTERN } from './glyph-colors';
 
 export { BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupHandshape } from './backup.model';
 
@@ -15,6 +18,8 @@ export const MAX_SIGNS = 10_000;
 export const MAX_NOTES = 2_000;
 export const MAX_ELEMENTS_PER_NOTE = 5_000;
 export const MAX_CUSTOM_HANDSHAPES = 500;
+export const MAX_MAP_NODES = 500;
+export const MAX_MAP_LINKS = 1_000;
 /** ~750 Ko d'image ; nos photos ré-encodées font 20 à 40 Ko. */
 const MAX_IMAGE_DATA_URL_LENGTH = 1_000_000;
 /** Images matricielles uniquement : pas de SVG (qui peut contenir du script). */
@@ -48,6 +53,14 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
       z.refine((v) => hands.has(v) || CUSTOM_HANDSHAPE_ID_PATTERN.test(v), 'Configuration inconnue du catalogue'),
     );
 
+  const handSpec = z.strictObject({
+    handshapeIds: z.array(hand).check(z.minLength(1), z.maxLength(MAX_HANDSHAPE_SEQUENCE)),
+    movementIds: z.array(known(movements, 'Mouvement')).check(z.minLength(1), z.maxLength(movements.size)),
+    directionIds: z.array(known(directions, 'Direction')).check(z.maxLength(directions.size)),
+    repeated: z.optional(z.boolean()),
+    orientationId: z.optional(known(orientations, 'Orientation')),
+  });
+
   const point = z.strictObject({
     x: z.number().check(z.gte(-2), z.lte(2)),
     y: z.number().check(z.gte(-2), z.lte(2)),
@@ -55,28 +68,34 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
     strokeId: z.int().check(z.gte(1), z.lte(500)),
   });
 
-  const glyph = z.strictObject({
-    normalizedGesturePoints: z.array(point).check(z.length(NORMALIZED_POINT_COUNT)),
-    boundingBoxRatio: z.number().check(z.gte(1 / MAX_BOUNDING_BOX_RATIO), z.lte(MAX_BOUNDING_BOX_RATIO)),
-    strokeCount: z.int().check(z.gte(1), z.lte(500)),
-    svgPathData: z.string().check(z.maxLength(MAX_SVG_PATH_LENGTH), z.regex(SVG_PATH_PATTERN)),
-  });
+  const color = z.string().check(z.regex(GLYPH_COLOR_PATTERN));
+  const svgPath = z.string().check(z.maxLength(MAX_SVG_PATH_LENGTH), z.regex(SVG_PATH_PATTERN));
+
+  const glyph = z
+    .strictObject({
+      normalizedGesturePoints: z
+        .array(point)
+        .check(
+          z.maxLength(Math.max(...SUPPORTED_POINT_COUNTS)),
+          z.refine((pts) => SUPPORTED_POINT_COUNTS.includes(pts.length), 'Nuage de 32 ou 48 points attendu'),
+        ),
+      boundingBoxRatio: z.number().check(z.gte(1 / MAX_BOUNDING_BOX_RATIO), z.lte(MAX_BOUNDING_BOX_RATIO)),
+      strokeCount: z.int().check(z.gte(1), z.lte(500)),
+      svgPathData: svgPath,
+      strokes: z.optional(z.array(z.strictObject({ d: svgPath, color: z.optional(color) })).check(z.maxLength(500))),
+      color: z.optional(color),
+    })
+    .check(
+      z.refine((g) => !g.strokes || g.strokes.length === g.strokeCount, 'Un tracé par trait est attendu (strokes)'),
+    );
 
   const sign = z.strictObject({
     id,
     word: text(1, 80),
     tags: z.array(text(1, 30)).check(z.maxLength(10)),
     anatomy: z.strictObject({
-      dominantHandId: hand,
-      dominantMovementId: known(movements, 'Mouvement'),
-      dominantDirectionId: z.optional(known(directions, 'Direction')),
-      dominantRepeated: z.optional(z.boolean()),
-      dominantOrientationId: z.optional(known(orientations, 'Orientation')),
-      nonDominantHandId: z.optional(hand),
-      nonDominantMovementId: z.optional(known(movements, 'Mouvement')),
-      nonDominantDirectionId: z.optional(known(directions, 'Direction')),
-      nonDominantRepeated: z.optional(z.boolean()),
-      nonDominantOrientationId: z.optional(known(orientations, 'Orientation')),
+      dominant: handSpec,
+      nonDominant: z.optional(handSpec),
       locationZoneIds: z.array(known(zones, 'Emplacement')).check(z.maxLength(zones.size)),
     }),
     glyph: z.optional(glyph),
@@ -85,12 +104,41 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
     updatedAt: timestamp,
   });
 
+  const unique = (items: { id: string }[]) => new Set(items.map((i) => i.id)).size === items.length;
+
+  const elements = z
+    .array(z.strictObject({ id, signId: id, orderIndex: z.int().check(z.gte(0)) }))
+    .check(z.maxLength(MAX_ELEMENTS_PER_NOTE));
+
+  const mindMap = z
+    .strictObject({
+      nodes: z
+        .array(
+          z.strictObject({
+            id,
+            x: z.number().check(z.gte(0), z.lte(MIND_MAP_WIDTH)),
+            y: z.number().check(z.gte(0), z.lte(MIND_MAP_HEIGHT)),
+            elements,
+          }),
+        )
+        .check(z.maxLength(MAX_MAP_NODES), z.refine(unique, 'Identifiants de bulles en double')),
+      links: z
+        .array(z.strictObject({ id, from: id, to: id, arrow: z.boolean() }))
+        .check(z.maxLength(MAX_MAP_LINKS)),
+    })
+    .check(
+      z.refine((map) => {
+        const nodes = new Set(map.nodes.map((n) => n.id));
+        return map.links.every((l) => nodes.has(l.from) && nodes.has(l.to) && l.from !== l.to);
+      }, 'Lien vers une bulle inexistante'),
+    );
+
   const note = z.strictObject({
     id,
     title: text(1, 120),
-    elements: z
-      .array(z.strictObject({ id, signId: id, orderIndex: z.int().check(z.gte(0)) }))
-      .check(z.maxLength(MAX_ELEMENTS_PER_NOTE)),
+    elements,
+    layout: z.optional(z.union([z.literal('linear'), z.literal('map')])),
+    map: z.optional(mindMap),
     updatedAt: timestamp,
   });
 
@@ -102,12 +150,11 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
     updatedAt: timestamp,
   });
 
-  const unique = (items: { id: string }[]) => new Set(items.map((i) => i.id)).size === items.length;
 
   return z
     .strictObject({
       format: z.literal(BACKUP_FORMAT),
-      version: z.union([z.literal(1), z.literal(2)]),
+      version: z.literal(BACKUP_VERSION),
       exportedAt: z.string().check(z.maxLength(40)),
       customHandshapes: z.optional(
         z
@@ -121,20 +168,35 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
       z.superRefine((backup, ctx) => {
         const available = new Set([...existingCustomIds, ...(backup.customHandshapes ?? []).map((h) => h.id)]);
         backup.signs.forEach((s, i) => {
-          for (const key of ['dominantHandId', 'nonDominantHandId'] as const) {
-            const id = s.anatomy[key];
-            if (id && CUSTOM_HANDSHAPE_ID_PATTERN.test(id) && !available.has(id)) {
-              ctx.addIssue({
-                code: 'custom',
-                path: ['signs', i, 'anatomy', key],
-                message: 'Configuration personnelle absente du fichier',
-                input: id,
-              });
-            }
+          for (const key of ['dominant', 'nonDominant'] as const) {
+            s.anatomy[key]?.handshapeIds.forEach((id, j) => {
+              if (CUSTOM_HANDSHAPE_ID_PATTERN.test(id) && !available.has(id)) {
+                ctx.addIssue({
+                  code: 'custom',
+                  path: ['signs', i, 'anatomy', key, 'handshapeIds', j],
+                  message: 'Configuration personnelle absente du fichier',
+                  input: id,
+                });
+              }
+            });
           }
         });
       }),
     );
+}
+
+/**
+ * Sauvegardes v1/v2 → v3 AVANT validation : seuls les signes au format à plat sont convertis
+ * (déplacement de champs, aucune interprétation) ; le schéma strict v3 valide ensuite le résultat.
+ */
+function upgradeLegacy(json: Record<string, unknown>): Record<string, unknown> {
+  if (json['version'] === BACKUP_VERSION) return json;
+  const signs = json['signs'];
+  return {
+    ...json,
+    version: BACKUP_VERSION,
+    signs: Array.isArray(signs) ? signs.map((s) => (isSignV2(s) ? migrateSignV2(s) : s)) : signs,
+  };
 }
 
 export type BackupParseResult = { ok: true; backup: Backup } | { ok: false; errors: string[] };
@@ -161,11 +223,10 @@ export function parseBackup(
   if (!SUPPORTED_BACKUP_VERSIONS.includes((json as { version?: unknown }).version as number)) {
     return { ok: false, errors: ['Version de sauvegarde non prise en charge.'] };
   }
-  const result = backupSchema(catalog, existingCustomIds).safeParse(json);
+  const result = backupSchema(catalog, existingCustomIds).safeParse(upgradeLegacy(json as Record<string, unknown>));
   if (result.success) {
-    // Normalisation v1 → v2 : pas de configurations personnelles.
-    const data = result.data as Omit<Backup, 'customHandshapes' | 'version'> & { customHandshapes?: Backup['customHandshapes'] };
-    return { ok: true, backup: { ...data, version: BACKUP_VERSION, customHandshapes: data.customHandshapes ?? [] } };
+    const data = result.data as Omit<Backup, 'customHandshapes'> & { customHandshapes?: Backup['customHandshapes'] };
+    return { ok: true, backup: { ...data, customHandshapes: data.customHandshapes ?? [] } };
   }
   const errors = result.error.issues.slice(0, 5).map((issue) => {
     const path = issue.path.reduce<string>(

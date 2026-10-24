@@ -14,10 +14,17 @@
     <h2 id="photo-title">Nouvelle configuration</h2>
     <p class="hint">Photographiez votre main sur un fond uni et bien éclairé, la configuration bien visible.</p>
 
-    <label class="pick">
-      <span class="button">{{ image() ? 'Changer de photo' : 'Prendre ou choisir une photo' }}</span>
-      <input #file type="file" accept="image/*" (change)="onFile(file)" [disabled]="busy()" />
-    </label>
+    <div class="picks">
+      <!-- capture : ouvre directement l'appareil photo sur mobile (ignoré sur ordinateur). -->
+      <label class="pick">
+        <span class="button primary">{{ image() ? 'Reprendre la photo' : 'Prendre une photo' }}</span>
+        <input #camera type="file" accept="image/*" capture="environment" (change)="onFile(camera)" [disabled]="busy()" />
+      </label>
+      <label class="pick">
+        <span class="button">Choisir dans la galerie</span>
+        <input #file type="file" accept="image/*" (change)="onFile(file)" [disabled]="busy()" />
+      </label>
+    </div>
 
     @if (previewUrl(); as url) {
       <img class="preview" [src]="url" alt="Aperçu de la configuration" />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boundingBox, boundingBoxRatio, normalizeStrokes } from './gesture-geometry';
+import { NORMALIZED_POINT_COUNT, boundingBox, boundingBoxRatio, normalizeStrokes } from './gesture-geometry';
 import { extractGesture } from './gesture';
 import { arc } from '../../../testing/shapes';
 
@@ -11,7 +11,7 @@ describe('normalizeStrokes', () => {
   it('est insensible à la taille et à la position, dans une boîte 1x1', () => {
     const big = normalizeStrokes([circle(400, 300, 200)]);
     const small = normalizeStrokes([circle(20, 700, 15)]);
-    expect(big).toHaveLength(32);
+    expect(big).toHaveLength(NORMALIZED_POINT_COUNT);
     expect(maxDiff(big, small)).toBeLessThan(1e-6);
     const bb = boundingBox(big);
     expect(Math.max(bb.width, bb.height)).toBeCloseTo(1, 6);
@@ -29,15 +29,15 @@ describe('normalizeStrokes', () => {
       [{ x: 0, y: 0 }, { x: 100, y: 100 }],
       [{ x: 100, y: 0 }, { x: 0, y: 100 }],
     ]);
-    expect(cross).toHaveLength(32);
+    expect(cross).toHaveLength(NORMALIZED_POINT_COUNT);
     expect([...new Set(cross.map((p) => p.strokeId))]).toEqual([1, 2]);
-    expect(cross.reduce((s, p) => s + p.x, 0) / 32).toBeCloseTo(0, 9);
-    expect(cross.reduce((s, p) => s + p.y, 0) / 32).toBeCloseTo(0, 9);
+    expect(cross.reduce((s, p) => s + p.x, 0) / cross.length).toBeCloseTo(0, 9);
+    expect(cross.reduce((s, p) => s + p.y, 0) / cross.length).toBeCloseTo(0, 9);
   });
 
   it('gère un simple tap sans NaN', () => {
     const tap = normalizeStrokes([[{ x: 5, y: 5 }], []]);
-    expect(tap).toHaveLength(32);
+    expect(tap).toHaveLength(NORMALIZED_POINT_COUNT);
     expect(tap.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
   });
 });
@@ -60,6 +60,10 @@ describe('extractGesture', () => {
       [{ x: 200, y: 300, pressure: 0.8 }, { x: 600, y: 300, pressure: 0.3 }],
     ])!;
     expect(g.strokeCount).toBe(2);
+    expect(g.normalizedGesturePoints).toHaveLength(NORMALIZED_POINT_COUNT);
+    // Un chemin par trait (couleurs individuelles), dont la concaténation donne svgPathData.
+    expect(g.strokes).toHaveLength(2);
+    expect(g.strokes!.map((s) => s.d).join(' ')).toBe(g.svgPathData);
     expect(g.svgPathData).toMatch(/^M[\d.,\sQTMZ-]+Z$/);
     const nums = g.svgPathData.match(/-?\d+(\.\d+)?/g)!.map(Number);
     expect(Math.min(...nums)).toBeGreaterThanOrEqual(0);

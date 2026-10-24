@@ -49,22 +49,9 @@
   gap: 0.5rem;
 }
 
-.title {
-  flex: 1 1 200px;
-  min-width: 0;
-  font: inherit;
-  font-size: 1.2rem;
-  font-weight: 600;
-  padding: 0.25rem 0.4rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-
-  &:hover,
-  &:focus {
-    border-color: var(--color-border);
-    background: #fff;
-  }
+.map {
+  flex: 1 1 320px;
+  min-height: 300px;
 }
 
 /* Flux linéaire de gauche à droite, retour à la ligne comme du texte. */
@@ -190,6 +177,11 @@
   background: #fff;
   border: 2px dashed var(--color-border);
   border-radius: 12px;
+}
+
+.canvas-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .hint {

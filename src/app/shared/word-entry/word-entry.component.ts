@@ -1,3 +1,4 @@
+import { GlyphPathsPipe } from '../glyph-paths.pipe';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -26,6 +27,7 @@ const fold = (s: string) =>
  */
 @Component({
   selector: 'app-word-entry',
+  imports: [GlyphPathsPipe],
   templateUrl: './word-entry.component.html',
   styleUrl: './word-entry.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

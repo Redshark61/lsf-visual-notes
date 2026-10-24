@@ -1,3 +1,4 @@
+import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CatalogService } from '../../core/services/catalog.service';
@@ -8,6 +9,12 @@ import { SignDialogComponent } from '../../shared/sign-dialog/sign-dialog.compon
 
 type Sort = 'alpha' | 'recent';
 
+/** Toutes les configurations d'un signe (suites des deux mains). */
+const handshapesOf = (s: UserSign) => [
+  ...s.anatomy.dominant.handshapeIds,
+  ...(s.anatomy.nonDominant?.handshapeIds ?? []),
+];
+
 const fold = (s: string) =>
   s
     .normalize('NFD')
@@ -16,7 +23,7 @@ const fold = (s: string) =>
 
 @Component({
   selector: 'app-dictionary',
-  imports: [RouterLink, SignDialogComponent],
+  imports: [RouterLink, SignDialogComponent, GlyphPathsPipe],
   templateUrl: './dictionary.component.html',
   styleUrl: './dictionary.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -36,7 +43,7 @@ export class DictionaryComponent {
 
   /** Configurations réellement utilisées (dominante ou dominée), pour le filtre. */
   protected readonly usedHands = computed(() => {
-    const ids = new Set((this.signs() ?? []).flatMap((s) => [s.anatomy.dominantHandId, s.anatomy.nonDominantHandId]));
+    const ids = new Set((this.signs() ?? []).flatMap((s) => handshapesOf(s)));
     return this.catalog.handshapes().filter((h) => ids.has(h.id));
   });
   protected readonly allTags = computed(() =>
@@ -49,7 +56,7 @@ export class DictionaryComponent {
     const list = (this.signs() ?? []).filter(
       (s) =>
         (!q || fold(s.word).includes(q) || s.tags.some((t) => fold(t).includes(q)) || fold(s.note ?? '').includes(q)) &&
-        (!hand || s.anatomy.dominantHandId === hand || s.anatomy.nonDominantHandId === hand) &&
+        (!hand || handshapesOf(s).includes(hand)) &&
         (!tag || s.tags.includes(tag)),
     );
     return this.sort() === 'alpha'

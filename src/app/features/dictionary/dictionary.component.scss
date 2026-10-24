@@ -71,6 +71,18 @@
   list-style: none;
 }
 
+li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.add-drawing {
+  align-self: center;
+  font-size: 0.85rem;
+  color: var(--color-primary);
+}
+
 .card {
   display: flex;
   flex-direction: column;

@@ -2,9 +2,13 @@ import { NotePage, UserSign } from './sign.model';
 
 /** Format de fichier de sauvegarde (sans dépendance à Zod : chargé dès le démarrage). */
 export const BACKUP_FORMAT = 'lsf-visual-notes';
-/** v2 : ajout des configurations photographiées (customHandshapes). Les fichiers v1 restent lisibles. */
-export const BACKUP_VERSION = 2;
-export const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2];
+/**
+ * v2 : configurations photographiées (customHandshapes).
+ * v3 : HandSpec par main (suites de configurations, plusieurs mouvements et directions).
+ * Les fichiers v1 et v2 restent lisibles (convertis à l'import).
+ */
+export const BACKUP_VERSION = 3;
+export const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2, 3];
 
 /** Configuration personnelle dans un fichier de sauvegarde (image en data URL base64). */
 export interface BackupHandshape {

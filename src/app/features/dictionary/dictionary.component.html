@@ -57,19 +57,24 @@
           <li>
             <button type="button" class="card" (click)="detail.set(s)">
               @if (s.glyph; as g) {
-                <svg class="glyph" [attr.viewBox]="viewBox" aria-hidden="true"><path [attr.d]="g.svgPathData" /></svg>
+                <svg class="glyph" [attr.viewBox]="viewBox" aria-hidden="true">@for (p of g | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}</svg>
               } @else {
                 <span class="glyph none" aria-hidden="true">sans dessin</span>
               }
               <span class="word">{{ s.word }}</span>
               <span class="hands" aria-hidden="true">
-                @for (id of [s.anatomy.dominantHandId, s.anatomy.nonDominantHandId]; track $index) {
+                @for (id of [s.anatomy.dominant.handshapeIds[0], s.anatomy.nonDominant?.handshapeIds?.[0]]; track $index) {
                   @if (id && handImage(id); as url) {
                     <img [src]="url" alt="" loading="lazy" />
                   }
                 }
               </span>
             </button>
+            @if (!s.glyph) {
+              <a class="add-drawing" [routerLink]="['/atelier', s.id]" [queryParams]="{ etape: 'dessin' }">
+                + Ajouter un dessin
+              </a>
+            }
           </li>
         } @empty {
           <li class="no-result">
@@ -87,6 +92,9 @@
 <app-sign-dialog [sign]="detail()" (closed)="detail.set(null)">
   @if (detail(); as d) {
     <button type="button" class="danger" (click)="remove(d)">Supprimer</button>
+    <a class="button" [routerLink]="['/atelier', d.id]" [queryParams]="{ etape: 'dessin' }">
+      {{ d.glyph ? 'Redessiner' : 'Ajouter un dessin' }}
+    </a>
     <a class="button" [routerLink]="['/atelier', d.id]">Modifier</a>
   }
 </app-sign-dialog>

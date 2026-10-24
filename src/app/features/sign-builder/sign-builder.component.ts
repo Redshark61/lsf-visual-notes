@@ -10,13 +10,12 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { NgTemplateOutlet, PercentPipe } from '@angular/common';
+import { PercentPipe } from '@angular/common';
 import { SmartCanvasComponent } from '../../shared/smart-canvas/smart-canvas.component';
-import { CatalogPickerComponent } from '../../shared/catalog-picker/catalog-picker.component';
 import { BodyMapComponent } from '../../shared/body-map/body-map.component';
-import { HandshapePhotoComponent } from '../../shared/handshape-photo/handshape-photo.component';
-import { HandParamsComponent } from '../../shared/hand-params/hand-params.component';
-import { describeHand } from '../../shared/sign-detail/describe-hand';
+import { HandEditorComponent } from '../../shared/hand-editor/hand-editor.component';
+import { HandsPreviewComponent, isSymmetric } from '../../shared/hands-preview/hands-preview.component';
+import { describeHand, handshapeNames } from '../../shared/sign-detail/describe-hand';
 import { CatalogService } from '../../core/services/catalog.service';
 import { RecognitionService } from '../../core/services/recognition.service';
 import {
@@ -27,8 +26,12 @@ import {
   StorageService,
   normalizeTags,
 } from '../../core/services/storage.service';
-import { SignGlyph, Stroke, UserSign } from '../../core/models/sign.model';
+import { HandSpec, SignGlyph, Stroke, UserSign } from '../../core/models/sign.model';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
+import { glyphPaths } from '../../core/utils/glyph-paths';
+import { SimplifiedKind } from '../../core/utils/stroke-simplify';
+import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
+import { ColorPaletteComponent } from '../../shared/color-palette.component';
 import { extractGesture } from '../../core/utils/gesture';
 import { boundingBox } from '../../core/utils/gesture-geometry';
 import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
@@ -56,6 +59,26 @@ const STEPS: Step[] = [
   { id: 'note', title: 'Note', optional: true },
 ];
 
+/** Préférence d'affichage seulement (jamais de signes ni de notes ici). */
+const SIMPLIFY_PREF_KEY = 'lsf.atelier.simplify';
+const readSimplifyPref = () => {
+  try {
+    return localStorage.getItem(SIMPLIFY_PREF_KEY) !== '0'; // activée par défaut
+  } catch {
+    return true;
+  }
+};
+const SIMPLIFIED_LABELS: Record<Exclude<SimplifiedKind, 'free'>, string> = {
+  line: 'en ligne droite',
+  polyline: 'en segments droits',
+  circle: 'en cercle',
+  ellipse: 'en ellipse',
+  arc: 'en arc de cercle',
+};
+
+const emptyHand = (): HandSpec => ({ handshapeIds: [], movementIds: [], directionIds: [] });
+const isComplete = (hand: HandSpec) => hand.handshapeIds.length > 0 && hand.movementIds.length > 0;
+
 interface Similar {
   word: string;
   score: number;
@@ -65,10 +88,11 @@ interface Similar {
   selector: 'app-sign-builder',
   imports: [
     SmartCanvasComponent,
-    CatalogPickerComponent,
     BodyMapComponent,
-    HandshapePhotoComponent,
-    HandParamsComponent, NgTemplateOutlet, PercentPipe, RouterLink],
+    HandEditorComponent,
+    HandsPreviewComponent,
+    GlyphPathsPipe,
+    ColorPaletteComponent, PercentPipe, RouterLink],
   templateUrl: './sign-builder.component.html',
   styleUrl: './sign-builder.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -83,7 +107,6 @@ export class SignBuilderComponent {
 
   private readonly canvas = viewChild(SmartCanvasComponent);
   private readonly heading = viewChild<ElementRef<HTMLElement>>('stepHeading');
-  private readonly movementPicker = viewChild('movementPicker', { read: ElementRef<HTMLElement> });
 
   protected readonly steps = STEPS;
   protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
@@ -94,17 +117,26 @@ export class SignBuilderComponent {
   // --- Brouillon
   protected readonly strokes = signal<Stroke[]>([]);
   protected readonly glyph = signal<SignGlyph | null>(null);
+  /** Simplification automatique des traits (préférence d'affichage, mémorisée). */
+  protected readonly simplify = signal(readSimplifyPref());
+  /** Dernier trait simplifié, pour proposer de garder le tracé d'origine. */
+  protected readonly lastSimplified = signal<{ index: number; label: string } | null>(null);
+  /** Couleur du pinceau pour les prochains traits (null = noir). La reconnaissance l'ignore. */
+  protected readonly brushColor = signal<string | null>(null);
+  /** Couleur de chaque trait du glyphe courant (dessin en cours, ou dessin conservé en modification). */
+  protected readonly strokeColors = signal<(string | null)[]>([]);
+  /** Aperçu coloré, un chemin par trait (cliquable pour appliquer la couleur du pinceau). */
+  protected readonly previewPaths = computed(() => {
+    const glyph = this.glyph();
+    if (!glyph) return [];
+    return glyphPaths(glyph).map((p, i) => ({ d: p.d, color: this.strokeColors()[i] ?? null }));
+  });
   protected readonly word = signal('');
-  protected readonly dominantHandId = signal<string | null>(null);
-  protected readonly dominantMovementId = signal<string | null>(null);
-  protected readonly dominantDirectionId = signal<string | null>(null);
-  protected readonly dominantRepeated = signal(false);
-  protected readonly dominantOrientationId = signal<string | null>(null);
-  protected readonly nonDominantHandId = signal<string | null>(null);
-  protected readonly nonDominantMovementId = signal<string | null>(null);
-  protected readonly nonDominantDirectionId = signal<string | null>(null);
-  protected readonly nonDominantRepeated = signal(false);
-  protected readonly nonDominantOrientationId = signal<string | null>(null);
+  protected readonly dominant = signal<HandSpec>(emptyHand());
+  /** null : signe à une main. */
+  protected readonly nonDominant = signal<HandSpec | null>(null);
+  /** La main dominée vient d'être recopiée depuis la dominante (symétrie). */
+  protected readonly mirroredFromDominant = signal(false);
   protected readonly zoneIds = signal<string[]>([]);
   protected readonly note = signal('');
   protected readonly tagsInput = signal('');
@@ -126,34 +158,22 @@ export class SignBuilderComponent {
   protected readonly similar = signal<Similar[]>([]);
 
   protected readonly tags = computed(() => normalizeTags(this.tagsInput().split(',')));
-  /** Récapitulatif : « Arc, vers le haut, répété · Paume vers soi ». */
-  protected readonly dominantSummary = computed(() =>
-    describeHand(this.catalog, {
-      movementId: this.dominantMovementId(),
-      directionId: this.dominantDirectionId(),
-      repeated: this.dominantRepeated(),
-      orientationId: this.dominantOrientationId(),
-    }),
+  /** Récapitulatif : « Index → Main plate · Arc + Contact, vers le haut, répété · Paume vers soi ». */
+  protected readonly dominantSummary = computed(
+    () => `${handshapeNames(this.catalog, this.dominant())} · ${describeHand(this.catalog, this.dominant())}`,
   );
-  protected readonly nonDominantSummary = computed(() =>
-    describeHand(this.catalog, {
-      movementId: this.nonDominantMovementId(),
-      directionId: this.nonDominantDirectionId(),
-      repeated: this.nonDominantRepeated(),
-      orientationId: this.nonDominantOrientationId(),
-    }),
-  );
+  protected readonly nonDominantSummary = computed(() => {
+    const hand = this.nonDominant();
+    return hand ? `${handshapeNames(this.catalog, hand)} · ${describeHand(this.catalog, hand)}` : 'Aucune';
+  });
   protected readonly confusable = computed(() => this.similar().filter((s) => s.score >= CONFUSION_SCORE));
-  protected readonly handshapeSources = computed(() =>
-    (this.catalog.catalog()?.sources ?? []).filter((s) => s.scope === 'handshapes'),
-  );
 
   /** Une étape est valide quand on peut la quitter vers l'avant. */
   private readonly valid = computed<Record<StepId, boolean>>(() => ({
     glyph: true,
     word: this.word().trim().length > 0,
-    dominant: !!this.dominantHandId() && !!this.dominantMovementId(),
-    nonDominant: !this.nonDominantHandId() || !!this.nonDominantMovementId(),
+    dominant: isComplete(this.dominant()),
+    nonDominant: this.nonDominant() === null || isComplete(this.nonDominant()!),
     zones: true,
     note: true,
   }));
@@ -164,10 +184,14 @@ export class SignBuilderComponent {
       case 'word':
         return this.word().trim() ? null : 'Indiquez le nom du signe.';
       case 'dominant':
-        if (!this.dominantHandId()) return 'Choisissez une configuration.';
-        return this.dominantMovementId() ? null : 'Choisissez aussi le mouvement de la main dominante.';
-      case 'nonDominant':
-        return this.valid().nonDominant ? null : 'Choisissez le mouvement de la main dominée.';
+        if (!this.dominant().handshapeIds.length) return 'Choisissez une configuration.';
+        return this.dominant().movementIds.length ? null : 'Choisissez aussi au moins un mouvement.';
+      case 'nonDominant': {
+        const hand = this.nonDominant();
+        if (!hand || isComplete(hand)) return null;
+        if (!hand.handshapeIds.length) return 'Choisissez la configuration de la main dominée, ou « Signe à une main ».';
+        return 'Choisissez aussi au moins un mouvement pour la main dominée.';
+      }
       default:
         return null;
     }
@@ -183,7 +207,7 @@ export class SignBuilderComponent {
       case 'glyph':
         return !this.glyph();
       case 'nonDominant':
-        return !this.nonDominantHandId();
+        return this.nonDominant() === null;
       case 'zones':
         return this.zoneIds().length === 0;
       default:
@@ -209,8 +233,10 @@ export class SignBuilderComponent {
         this.stepIndex.set(1); // le dessin est fait : on passe directement au nom
       }
     }
-    const editId = inject(ActivatedRoute).snapshot.paramMap.get('id');
-    if (editId) this.loadForEdit(editId);
+    const route = inject(ActivatedRoute).snapshot;
+    const editId = route.paramMap.get('id');
+    // ?etape=dessin : ajout rapide d'un dessin depuis le Dictionnaire.
+    if (editId) this.loadForEdit(editId, route.queryParamMap.get('etape') === 'dessin');
     inject(DestroyRef).onDestroy(() => clearTimeout(this.debounce));
   }
 
@@ -227,6 +253,7 @@ export class SignBuilderComponent {
 
   protected goTo(index: number): void {
     if (index < 0 || index >= STEPS.length || !this.reachable()[index]) return;
+    if (STEPS[index].id === 'nonDominant') this.prefillSymmetricHand();
     this.stepIndex.set(index);
     this.error.set(null);
     // Accessibilité : on annonce la nouvelle étape en y plaçant le focus.
@@ -243,32 +270,30 @@ export class SignBuilderComponent {
     this.goTo(this.stepIndex() - 1);
   }
 
-  protected setDominantHand(id: string | null): void {
-    this.dominantHandId.set(id);
-    if (id && !this.dominantMovementId()) this.revealMovement();
+  /** Étape « Main dominée » : signe à une main, ou deux mains. */
+  protected setTwoHands(two: boolean): void {
+    if (two === (this.nonDominant() !== null)) return;
+    this.mirroredFromDominant.set(false);
+    this.nonDominant.set(two ? emptyHand() : null);
+    if (two) this.prefillSymmetricHand();
   }
 
-  protected setNonDominantHand(id: string | null): void {
-    this.nonDominantHandId.set(id);
-    if (!id) {
-      this.nonDominantMovementId.set(null);
-      this.nonDominantDirectionId.set(null);
-      this.nonDominantRepeated.set(false);
-      this.nonDominantOrientationId.set(null);
-    } else if (!this.nonDominantMovementId()) this.revealMovement();
-  }
-
-  /** Le choix du mouvement est sous la grille des configurations, souvent hors écran. */
-  private revealMovement(): void {
-    afterNextRender(
-      () => this.movementPicker()?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'center' }),
-      { injector: this.injector },
-    );
+  /**
+   * Symétrie : la main dominée reprend par défaut toute la main dominante (configurations,
+   * mouvements, directions, orientation — vocabulaire relatif, donc juste en miroir).
+   * Ne remplace jamais une main dominée déjà renseignée.
+   */
+  private prefillSymmetricHand(): void {
+    const current = this.nonDominant();
+    if (!isSymmetric(this.dominant()) || (current && current.handshapeIds.length)) return;
+    this.nonDominant.set(structuredClone(this.dominant()));
+    this.mirroredFromDominant.set(true);
   }
 
   // --- Étape dessin
 
   protected undo(): void {
+    this.lastSimplified.set(null);
     this.canvas()?.undo();
   }
 
@@ -276,12 +301,33 @@ export class SignBuilderComponent {
     this.canvas()?.clear();
   }
 
+  protected onStrokeSimplified(event: { index: number; kind: Exclude<SimplifiedKind, 'free'> }): void {
+    this.lastSimplified.set({ index: event.index, label: SIMPLIFIED_LABELS[event.kind] });
+  }
+
+  protected keepOriginal(): void {
+    const last = this.lastSimplified();
+    if (!last) return;
+    this.lastSimplified.set(null);
+    this.canvas()?.restoreRaw(last.index);
+  }
+
+  protected toggleSimplify(on: boolean): void {
+    this.simplify.set(on);
+    try {
+      localStorage.setItem(SIMPLIFY_PREF_KEY, on ? '1' : '0');
+    } catch {
+      // stockage indisponible : préférence non conservée
+    }
+  }
+
   protected onStrokeStart(): void {
+    this.lastSimplified.set(null);
     clearTimeout(this.debounce);
     this.similarityRequest++; // invalide une vérification en cours
   }
 
-  private async loadForEdit(id: string): Promise<void> {
+  private async loadForEdit(id: string, drawingFirst = false): Promise<void> {
     const sign = await this.storage.getSign(id);
     if (!sign) {
       this.error.set("Ce signe n'existe plus.");
@@ -291,27 +337,22 @@ export class SignBuilderComponent {
     this.editing.set(sign);
     this.keptGlyph.set(sign.glyph ?? null);
     this.glyph.set(sign.glyph ?? null);
+    this.strokeColors.set(sign.glyph ? glyphPaths(sign.glyph).map((p) => p.color) : []);
     this.word.set(sign.word);
-    this.dominantHandId.set(a.dominantHandId);
-    this.dominantMovementId.set(a.dominantMovementId);
-    this.dominantDirectionId.set(a.dominantDirectionId ?? null);
-    this.dominantRepeated.set(a.dominantRepeated ?? false);
-    this.dominantOrientationId.set(a.dominantOrientationId ?? null);
-    this.nonDominantHandId.set(a.nonDominantHandId ?? null);
-    this.nonDominantMovementId.set(a.nonDominantMovementId ?? null);
-    this.nonDominantDirectionId.set(a.nonDominantDirectionId ?? null);
-    this.nonDominantRepeated.set(a.nonDominantRepeated ?? false);
-    this.nonDominantOrientationId.set(a.nonDominantOrientationId ?? null);
+    this.dominant.set(structuredClone(a.dominant));
+    this.nonDominant.set(a.nonDominant ? structuredClone(a.nonDominant) : null);
     this.zoneIds.set([...a.locationZoneIds]);
     this.note.set(sign.note ?? '');
     this.tagsInput.set(sign.tags.join(', '));
-    this.stepIndex.set(STEPS.length - 1); // récapitulatif : chaque étape a un lien « Modifier »
+    // Récapitulatif (chaque étape a un lien « Modifier »), ou directement le dessin.
+    this.stepIndex.set(drawingFirst ? 0 : STEPS.length - 1);
   }
 
   /** Modification : supprime le dessin (le signe devient une simple entrée de lexique). */
   protected removeGlyph(): void {
     this.keptGlyph.set(null);
     this.glyph.set(null);
+    this.strokeColors.set([]);
     this.similar.set([]);
     this.canvas()?.clear();
   }
@@ -320,6 +361,10 @@ export class SignBuilderComponent {
     this.strokes.set(strokes);
     // Canevas vide en modification : on retombe sur le dessin existant.
     this.glyph.set(strokes.length ? (this.canvas()?.extractGesture() ?? null) : this.keptGlyph());
+    const kept = this.keptGlyph();
+    this.strokeColors.set(
+      strokes.length ? (this.canvas()?.getStrokeColors() ?? []) : kept ? glyphPaths(kept).map((p) => p.color) : [],
+    );
     clearTimeout(this.debounce);
     const request = ++this.similarityRequest;
     if (strokes.length === 0) {
@@ -346,36 +391,22 @@ export class SignBuilderComponent {
   // --- Enregistrement
 
   protected async save(): Promise<void> {
-    const dominantHandId = this.dominantHandId();
-    const dominantMovementId = this.dominantMovementId();
-    if (this.saving() || !this.reachable()[STEPS.length - 1] || !dominantHandId || !dominantMovementId) return;
+    if (this.saving() || !this.reachable()[STEPS.length - 1]) return;
 
     this.saving.set(true);
     this.error.set(null);
     try {
-      const nonDominantHandId = this.nonDominantHandId();
       const editing = this.editing();
+      const nonDominant = this.nonDominant();
       const draft = {
         word: this.word(),
         tags: this.tags(),
         anatomy: {
-          dominantHandId,
-          dominantMovementId,
-          dominantDirectionId: this.dominantDirectionId() ?? undefined,
-          dominantRepeated: this.dominantRepeated(),
-          dominantOrientationId: this.dominantOrientationId() ?? undefined,
-          ...(nonDominantHandId
-            ? {
-                nonDominantHandId,
-                nonDominantMovementId: this.nonDominantMovementId() ?? undefined,
-                nonDominantDirectionId: this.nonDominantDirectionId() ?? undefined,
-                nonDominantRepeated: this.nonDominantRepeated(),
-                nonDominantOrientationId: this.nonDominantOrientationId() ?? undefined,
-              }
-            : {}),
+          dominant: this.dominant(),
+          ...(nonDominant ? { nonDominant } : {}),
           locationZoneIds: this.zoneIds(),
         },
-        glyph: this.glyph() ?? undefined,
+        glyph: this.glyphWithColor(),
         note: this.note(),
       } satisfies SignDraft;
       const sign = editing ? await this.storage.updateSign(editing.id, draft) : await this.storage.createSign(draft);
@@ -385,6 +416,30 @@ export class SignBuilderComponent {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /** Glyphe à enregistrer, avec la couleur de chaque trait. */
+  private glyphWithColor(): SignGlyph | undefined {
+    const glyph = this.glyph();
+    if (!glyph) return undefined;
+    const { color: _legacy, strokes, ...rest } = glyph;
+    const colors = this.strokeColors();
+    if (!strokes?.length) {
+      // Ancien glyphe sans détail par trait : une seule couleur pour l'ensemble.
+      return colors[0] ? { ...rest, color: colors[0] } : rest;
+    }
+    return { ...rest, strokes: strokes.map((s, i) => (colors[i] ? { d: s.d, color: colors[i]! } : { d: s.d })) };
+  }
+
+  /** Aperçu : touche d'un trait → couleur du pinceau. */
+  protected recolor(index: number): void {
+    const color = this.brushColor();
+    this.strokeColors.update((colors) => {
+      const next = [...colors];
+      next[index] = color;
+      return next;
+    });
+    if (this.strokes().length) this.canvas()?.setStrokeColor(index, color);
   }
 
   /** Retour au Carnet ; le signe créé (s'il existe) y sera inséré. */
@@ -401,14 +456,13 @@ export class SignBuilderComponent {
     this.similarityRequest++;
     this.strokes.set([]);
     this.glyph.set(null);
+    this.brushColor.set(null);
+    this.strokeColors.set([]);
     this.similar.set([]);
     this.word.set('');
-    this.dominantHandId.set(null);
-    this.dominantMovementId.set(null);
-    this.dominantDirectionId.set(null);
-    this.dominantRepeated.set(false);
-    this.dominantOrientationId.set(null);
-    this.setNonDominantHand(null);
+    this.dominant.set(emptyHand());
+    this.nonDominant.set(null);
+    this.mirroredFromDominant.set(false);
     this.zoneIds.set([]);
     this.note.set('');
     this.tagsInput.set('');

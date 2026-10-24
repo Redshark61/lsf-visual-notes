@@ -20,11 +20,21 @@ export class CatalogPickerComponent {
   /** Si défini, ajoute une option "aucun" (valeur null). */
   readonly noneLabel = input<string | null>(null);
   readonly value = model<string | null>(null);
+  /** Sélection multiple : utiliser `values` au lieu de `value`. */
+  readonly multiple = input(false);
+  readonly values = model<string[]>([]);
   /** "chips" : pastilles compactes ; "cards" : grandes cartes illustrées (configurations de main). */
   readonly layout = input<'chips' | 'cards'>('chips');
 
   protected readonly query = signal('');
-  protected readonly selected = computed(() => this.items().find((i) => i.id === this.value()));
+  protected readonly selectedLabel = computed(() => {
+    if (this.multiple()) {
+      const names = this.values().map((id) => this.items().find((i) => i.id === id)?.name ?? id);
+      return names.length ? names.join(' + ') : '—';
+    }
+    const item = this.items().find((i) => i.id === this.value());
+    return item?.name ?? (this.value() === null && this.noneLabel() ? this.noneLabel()! : '—');
+  });
   protected readonly groups = computed(() => {
     const q = fold(this.query().trim());
     const groups = new Map<string, CatalogItem[]>();
@@ -37,7 +47,17 @@ export class CatalogPickerComponent {
     return [...groups].map(([category, items]) => ({ category, items }));
   });
 
+  protected isSelected(id: string): boolean {
+    return this.multiple() ? this.values().includes(id) : this.value() === id;
+  }
+
   protected select(id: string | null): void {
-    this.value.set(id);
+    if (!this.multiple()) {
+      this.value.set(id);
+      return;
+    }
+    if (id === null) return;
+    const current = this.values();
+    this.values.set(current.includes(id) ? current.filter((v) => v !== id) : [...current, id]);
   }
 }

@@ -2,7 +2,7 @@
 import { db } from '../db/app.db';
 import { RecognizerRequest, RecognizerResponse } from '../models/recognition.model';
 import { SignGlyph } from '../models/sign.model';
-import { NORMALIZED_POINT_COUNT, boundingBoxRatio, normalizeStrokes } from '../utils/gesture-geometry';
+import { SUPPORTED_POINT_COUNTS, boundingBoxRatio, normalizeStrokes } from '../utils/gesture-geometry';
 import { QTemplate, isCompatible, recognize, toTemplate } from './q-recognizer';
 
 /**
@@ -37,7 +37,7 @@ function isUsable(glyph: SignGlyph): boolean {
   const pts = glyph.normalizedGesturePoints;
   return (
     Array.isArray(pts) &&
-    pts.length === NORMALIZED_POINT_COUNT &&
+    SUPPORTED_POINT_COUNTS.includes(pts.length) &&
     pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) &&
     Number.isFinite(glyph.boundingBoxRatio) &&
     glyph.boundingBoxRatio > 0
@@ -56,9 +56,9 @@ addEventListener('message', async ({ data }: MessageEvent<RecognizerRequest>) =>
     const all = await templates;
     const nonEmpty = strokes.filter((s) => s.length > 0);
     const candidate = {
-      normalizedPoints: normalizeStrokes(nonEmpty),
       strokeCount: nonEmpty.length,
       boundingBoxRatio: boundingBoxRatio(nonEmpty.flat()),
+      normalize: (n: number) => normalizeStrokes(nonEmpty, n),
     };
     const response: RecognizerResponse = {
       type: 'result',

@@ -1,0 +1,112 @@
+<details class="section" [open]="isOpen('config')" (toggle)="onToggle('config', $event)">
+  <summary>
+    <span class="title">Configuration</span>
+    <span class="value" [class.missing]="!hand().handshapeIds.length">{{ configSummary() || 'à choisir' }}</span>
+  </summary>
+  <div class="body">
+    @if (hand().handshapeIds.length) {
+      <ol class="sequence" aria-label="Suite de configurations">
+        @for (id of hand().handshapeIds; track $index; let i = $index) {
+          <li>
+            <button
+              type="button"
+              class="slot"
+              [attr.aria-pressed]="i === activeSlot()"
+              [attr.aria-label]="'Configuration ' + (i + 1) + ' : ' + (item(id)?.name ?? id) + ' (modifier)'"
+              (click)="activeSlot.set(i)"
+            >
+              @if (item(id)?.imageUrl; as url) {
+                <img [src]="url" alt="" />
+              }
+              <span>{{ i + 1 }}. {{ item(id)?.name ?? id }}</span>
+            </button>
+            @if (hand().handshapeIds.length > 1) {
+              <button type="button" class="remove" [attr.aria-label]="'Retirer la configuration ' + (i + 1)" (click)="removeSlot(i)">
+                ×
+              </button>
+            }
+          </li>
+        }
+        @if (pendingSlot()) {
+          <li>
+            <span class="slot pending">{{ hand().handshapeIds.length + 1 }}. à choisir ci-dessous</span>
+            <button type="button" class="remove" aria-label="Annuler l'ajout" (click)="cancelPending()">×</button>
+          </li>
+        }
+      </ol>
+      @if (!pendingSlot() && hand().handshapeIds.length < maxSequence) {
+        <button type="button" class="link" (click)="addSlot()">
+          + Ajouter une configuration suivante <small>(la main change de forme pendant le signe)</small>
+        </button>
+      }
+    }
+    <app-catalog-picker
+      [label]="pendingSlot() ? 'Configuration suivante' : hand().handshapeIds.length > 1 ? 'Configuration ' + (activeSlot() + 1) : 'Configuration'"
+      layout="cards"
+      [items]="catalog.handshapes()"
+      [value]="hand().handshapeIds[activeSlot()] ?? null"
+      (valueChange)="setSlot($event)"
+    />
+    <app-handshape-photo (created)="setSlot($event)" />
+    @for (source of sources(); track source.url) {
+      <p class="source">
+        Configurations : <a [href]="source.url" target="_blank" rel="noopener">{{ source.name }}</a> ({{ source.license }})
+      </p>
+    }
+  </div>
+</details>
+
+<details class="section" [open]="isOpen('movement')" (toggle)="onToggle('movement', $event)">
+  <summary>
+    <span class="title">Mouvement</span>
+    <span class="value" [class.missing]="!hand().movementIds.length">{{ movementSummary() || 'à choisir' }}</span>
+  </summary>
+  <div class="body">
+    <p class="hint">Plusieurs choix possibles, par exemple « Rotation » + « Contact » + « Symétrique ».</p>
+    <app-catalog-picker
+      label="Mouvements"
+      [multiple]="true"
+      [items]="catalog.movements()"
+      [values]="hand().movementIds"
+      (valuesChange)="setMovements($event)"
+    />
+  </div>
+</details>
+
+@if (moving()) {
+  <details class="section" [open]="isOpen('direction')" (toggle)="onToggle('direction', $event)">
+    <summary>
+      <span class="title">Direction et répétition</span>
+      <span class="value">{{ directionSummary() || 'facultatif' }}</span>
+    </summary>
+    <div class="body">
+      <app-catalog-picker
+        label="Directions"
+        [multiple]="true"
+        [items]="catalog.directions()"
+        [values]="hand().directionIds"
+        (valuesChange)="setDirections($event)"
+      />
+      <label class="repeat">
+        <input type="checkbox" [checked]="!!hand().repeated" (change)="setRepeated($any($event.target).checked)" />
+        Mouvement répété
+      </label>
+    </div>
+  </details>
+}
+
+<details class="section" [open]="isOpen('orientation')" (toggle)="onToggle('orientation', $event)">
+  <summary>
+    <span class="title">Orientation de la paume</span>
+    <span class="value">{{ orientationSummary() || 'facultatif' }}</span>
+  </summary>
+  <div class="body">
+    <app-catalog-picker
+      label="Orientation"
+      noneLabel="Non précisée"
+      [items]="catalog.orientations()"
+      [value]="hand().orientationId ?? null"
+      (valueChange)="setOrientation($event)"
+    />
+  </div>
+</details>

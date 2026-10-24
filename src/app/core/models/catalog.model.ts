@@ -30,7 +30,7 @@ export interface Catalog {
 export interface CustomHandshape {
   id: string; // hand_custom_<32 hex> : compatible avec CATALOG_ID_PATTERN
   name: string;
-  /** Photo ré-encodée (JPEG, 320 px max, sans métadonnées EXIF). */
+  /** Photo ré-encodée (WebP ou JPEG, 240 px max, sans métadonnées EXIF). */
   image: Blob;
   createdAt: number;
   updatedAt: number;

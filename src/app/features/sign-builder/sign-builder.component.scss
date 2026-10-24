@@ -114,7 +114,14 @@ h2 {
 
 .row {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.check,
+.simplified {
+  font-size: 0.9rem;
 }
 
 .field {
@@ -181,10 +188,7 @@ h2 {
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-
-  path {
-    fill: var(--color-ink);
-  }
+  fill: var(--color-ink); // sur le <svg> : la couleur propre du glyphe (attribut fill du path) l'emporte
 
   &.big {
     width: 140px;
@@ -300,4 +304,39 @@ a.button {
 a.link {
   color: var(--color-primary);
   margin-left: 0.5rem;
+}
+
+.nav-end {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.recolor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+
+  .hint {
+    flex: 1 1 220px;
+    font-size: 0.85rem;
+  }
+}
+
+.glyph.preview {
+  width: 120px;
+  height: 120px;
+
+  path {
+    cursor: pointer;
+    // Zone de touche élargie autour des traits fins.
+    stroke: transparent;
+    stroke-width: 8;
+
+    &:hover,
+    &:focus-visible {
+      outline: none;
+      stroke: rgb(31 58 95 / 25%);
+    }
+  }
 }

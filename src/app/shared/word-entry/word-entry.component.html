@@ -26,7 +26,7 @@
         (mouseenter)="activeIndex.set(i)"
       >
         @if (sign.glyph; as g) {
-          <svg class="glyph" [attr.viewBox]="viewBox" aria-hidden="true"><path [attr.d]="g.svgPathData" /></svg>
+          <svg class="glyph" [attr.viewBox]="viewBox" aria-hidden="true">@for (p of g | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}</svg>
         } @else {
           <span class="glyph none" aria-hidden="true"></span>
         }

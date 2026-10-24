@@ -1,22 +1,25 @@
 import { CatalogService } from '../../core/services/catalog.service';
+import { HandSpec } from '../../core/models/sign.model';
 
-export interface HandParams {
-  movementId?: string | null;
-  directionId?: string | null;
-  repeated?: boolean | null;
-  orientationId?: string | null;
+const STATIC_MOVEMENT = 'move_none';
+
+const nameOf = (catalog: CatalogService, id: string) => catalog.find(id)?.name ?? id;
+
+/** « Index → Main plate » */
+export function handshapeNames(catalog: CatalogService, hand: HandSpec | null | undefined): string {
+  return hand?.handshapeIds.map((id) => nameOf(catalog, id)).join(' → ') || '—';
 }
 
-/** « Arc, vers le haut, répété · Paume vers soi » (les éléments absents sont omis). */
-export function describeHand(catalog: CatalogService, h: HandParams): string {
-  const name = (id?: string | null) => (id ? (catalog.find(id)?.name ?? id) : null);
-  const moving = !!h.movementId && h.movementId !== 'move_none';
+/** « Rotation / cercle + Contact, vers le haut, répété · Paume vers soi » (éléments absents omis). */
+export function describeHand(catalog: CatalogService, hand: HandSpec | null | undefined): string {
+  if (!hand) return '';
+  const moving = hand.movementIds.some((m) => m !== STATIC_MOVEMENT);
   const movement = [
-    name(h.movementId) ?? 'Mouvement non précisé',
-    moving ? name(h.directionId)?.toLowerCase() : null,
-    moving && h.repeated ? 'répété' : null,
+    hand.movementIds.map((id) => nameOf(catalog, id)).join(' + ') || 'Mouvement non précisé',
+    ...(moving ? hand.directionIds.map((id) => nameOf(catalog, id).toLowerCase()) : []),
+    moving && hand.repeated ? 'répété' : null,
   ]
     .filter(Boolean)
     .join(', ');
-  return [movement, name(h.orientationId)].filter(Boolean).join(' · ');
+  return [movement, hand.orientationId ? nameOf(catalog, hand.orientationId) : null].filter(Boolean).join(' · ');
 }

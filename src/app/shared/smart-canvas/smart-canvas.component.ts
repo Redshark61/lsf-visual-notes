@@ -13,6 +13,7 @@ import {
 import { Point, SignGlyph, Stroke } from '../../core/models/sign.model';
 import { strokeToSvgPath } from '../../core/utils/freehand';
 import { extractGesture } from '../../core/utils/gesture';
+import { SimplifiedKind, simplifyStroke } from '../../core/utils/stroke-simplify';
 
 /** Throttling spatial : un point n'est enregistré que s'il est à au moins 4 px du précédent. */
 const MIN_POINT_DISTANCE = 4;
@@ -46,14 +47,23 @@ const MIN_POINT_DISTANCE = 4;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SmartCanvasComponent {
+  /** Encre par défaut. */
   readonly color = input('#1d1d1f');
+  /** Couleur des prochains traits (null = encre). Purement visuel : la reconnaissance l'ignore. */
+  readonly brushColor = input<string | null>(null);
   /** Traits à afficher au montage (ex. retour sur l'étape de dessin). Lu une seule fois. */
   readonly initialStrokes = input<Stroke[]>([]);
+  /** Couleur de chacun des traits initiaux. Lu une seule fois. */
+  readonly initialColors = input<(string | null)[]>([]);
+  /** Simplifie chaque trait au lever du stylet (ligne, segments, cercle, ellipse, arc). */
+  readonly simplify = input(false);
 
   /** Début d'un nouveau trait (permet d'annuler un debounce de reconnaissance en cours). */
   readonly strokeStart = output<void>();
   /** Liste complète des traits après un lever de stylet, une annulation ou un effacement. */
   readonly strokesChange = output<Stroke[]>();
+  /** Un trait vient d'être simplifié (émis juste avant strokesChange). */
+  readonly strokeSimplified = output<{ index: number; kind: Exclude<SimplifiedKind, 'free'> }>();
 
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly ngZone = inject(NgZone);
@@ -61,8 +71,13 @@ export class SmartCanvasComponent {
 
   private ctx!: CanvasRenderingContext2D;
   private strokes: Stroke[] = [];
+  /** Couleur de chaque trait (parallèle à `strokes`). */
+  private strokeColors: (string | null)[] = [];
+  /** Tracé d'origine des traits simplifiés (parallèle à `strokes`, null si non simplifié). */
+  private rawStrokes: (Stroke | null)[] = [];
   private committedPaths: Path2D[] = [];
   private current: Stroke | null = null;
+  private currentColor: string | null = null;
   private activePointerId: number | null = null;
   private rect: DOMRect | null = null;
   private dpr = 1;
@@ -77,6 +92,29 @@ export class SmartCanvasComponent {
     return this.strokes.map((s) => s.map((p) => ({ ...p })));
   }
 
+  /** Couleur de chaque trait, dans l'ordre (null = encre). */
+  getStrokeColors(): (string | null)[] {
+    return [...this.strokeColors];
+  }
+
+  /** Recolorie un trait existant (n'émet rien : la forme ne change pas). */
+  setStrokeColor(index: number, color: string | null): void {
+    if (index < 0 || index >= this.strokes.length) return;
+    this.strokeColors[index] = color;
+    this.draw();
+  }
+
+  /** Rétablit le tracé d'origine d'un trait simplifié. */
+  restoreRaw(index: number): void {
+    const raw = this.rawStrokes[index];
+    if (!raw) return;
+    this.strokes[index] = raw;
+    this.rawStrokes[index] = null;
+    this.committedPaths[index] = new Path2D(strokeToSvgPath(raw));
+    this.draw();
+    this.strokesChange.emit(this.getStrokes());
+  }
+
   get strokeCount(): number {
     return this.strokes.length;
   }
@@ -89,6 +127,8 @@ export class SmartCanvasComponent {
   undo(): void {
     if (this.strokes.length === 0) return;
     this.strokes.pop();
+    this.strokeColors.pop();
+    this.rawStrokes.pop();
     this.committedPaths.pop();
     this.draw();
     this.strokesChange.emit(this.getStrokes());
@@ -99,9 +139,11 @@ export class SmartCanvasComponent {
    * N'émet pas strokesChange : l'appelant connaît déjà ces traits, et une émission relancerait
    * la reconnaissance.
    */
-  setStrokes(strokes: Stroke[]): void {
+  setStrokes(strokes: Stroke[], colors: (string | null)[] = []): void {
     this.cancelCurrent();
     this.strokes = strokes.filter((s) => s.length > 0).map((s) => s.map((p) => ({ ...p })));
+    this.strokeColors = this.strokes.map((_, i) => colors[i] ?? null);
+    this.rawStrokes = this.strokes.map(() => null);
     this.committedPaths = this.strokes.map((s) => new Path2D(strokeToSvgPath(s)));
     this.draw();
   }
@@ -110,6 +152,8 @@ export class SmartCanvasComponent {
     this.cancelCurrent();
     if (this.strokes.length === 0) return;
     this.strokes = [];
+    this.strokeColors = [];
+    this.rawStrokes = [];
     this.committedPaths = [];
     this.draw();
     this.strokesChange.emit([]);
@@ -122,6 +166,8 @@ export class SmartCanvasComponent {
     this.strokes = this.initialStrokes()
       .filter((s) => s.length > 0)
       .map((s) => s.map((p) => ({ ...p })));
+    this.strokeColors = this.strokes.map((_, i) => this.initialColors()[i] ?? null);
+    this.rawStrokes = this.strokes.map(() => null);
     this.committedPaths = this.strokes.map((s) => new Path2D(strokeToSvgPath(s)));
 
     const resizeObserver = new ResizeObserver(() => this.resize());
@@ -156,6 +202,7 @@ export class SmartCanvasComponent {
     this.activePointerId = e.pointerId;
     this.rect = canvas.getBoundingClientRect();
     this.current = [this.toPoint(e)];
+    this.currentColor = this.brushColor();
     this.scheduleDraw();
     this.strokeStart.emit();
   }
@@ -173,12 +220,19 @@ export class SmartCanvasComponent {
   private onPointerUp(e: PointerEvent): void {
     if (e.pointerId !== this.activePointerId || !this.current) return;
     this.addPoint(this.toPoint(e), 0.5); // conserve le point final exact
-    const stroke = this.current;
+    const raw = this.current;
     this.current = null;
     this.activePointerId = null;
+    const simplified = this.simplify() ? simplifyStroke(raw) : null;
+    const stroke = simplified && simplified.kind !== 'free' ? simplified.points : raw;
     this.strokes.push(stroke);
+    this.strokeColors.push(this.currentColor);
+    this.rawStrokes.push(stroke === raw ? null : raw);
     this.committedPaths.push(new Path2D(strokeToSvgPath(stroke)));
     this.draw();
+    if (simplified && simplified.kind !== 'free') {
+      this.strokeSimplified.emit({ index: this.strokes.length - 1, kind: simplified.kind });
+    }
     this.strokesChange.emit(this.getStrokes());
   }
 
@@ -226,8 +280,13 @@ export class SmartCanvasComponent {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = this.color();
-    for (const path of this.committedPaths) ctx.fill(path);
-    if (this.current) ctx.fill(new Path2D(strokeToSvgPath(this.current)));
+    this.committedPaths.forEach((path, i) => {
+      ctx.fillStyle = this.strokeColors[i] ?? this.color();
+      ctx.fill(path);
+    });
+    if (this.current) {
+      ctx.fillStyle = this.currentColor ?? this.color();
+      ctx.fill(new Path2D(strokeToSvgPath(this.current)));
+    }
   }
 }

@@ -16,10 +16,13 @@ import { NgTemplateOutlet, PercentPipe } from '@angular/common';
 import { SmartCanvasComponent } from '../../shared/smart-canvas/smart-canvas.component';
 import { SignDialogComponent } from '../../shared/sign-dialog/sign-dialog.component';
 import { WordEntryComponent } from '../../shared/word-entry/word-entry.component';
+import { NoteTitleComponent } from './note-title.component';
+import { MindMapComponent } from './mind-map/mind-map.component';
+import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
 import { RecognitionService } from '../../core/services/recognition.service';
 import { MAX_NOTE_TITLE_LENGTH, StorageService } from '../../core/services/storage.service';
 import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
-import { NoteElement, NotePage, Stroke, UserSign } from '../../core/models/sign.model';
+import { MapNode, MindMap, NoteElement, NotePage, Stroke, UserSign } from '../../core/models/sign.model';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
 
 /** Délai après le lever du stylet, pour laisser le temps de tracer un glyphe en plusieurs traits. */
@@ -50,6 +53,12 @@ function readPrefs(): { display: NoteDisplay; inputMode: InputMode } {
   }
 }
 
+/** Tous les éléments de la note, quelle que soit la disposition. */
+function allElements(note: NotePage | null | undefined): NoteElement[] {
+  if (!note) return [];
+  return [...note.elements, ...(note.map?.nodes.flatMap((n) => n.elements) ?? [])];
+}
+
 interface Candidate {
   sign: UserSign;
   score: number;
@@ -65,11 +74,18 @@ type Proposal =
 
 @Component({
   selector: 'app-notebook',
-  imports: [SmartCanvasComponent, SignDialogComponent, WordEntryComponent, NgTemplateOutlet, PercentPipe, RouterLink],
+  imports: [
+    SmartCanvasComponent,
+    SignDialogComponent,
+    WordEntryComponent,
+    NoteTitleComponent,
+    MindMapComponent,
+    GlyphPathsPipe, NgTemplateOutlet, PercentPipe, RouterLink],
   host: {
     '(document:click)': 'onDocumentClick($event)',
     '(document:keydown.escape)': 'closeBubble()',
     '(window:resize)': 'closeBubble()',
+    '(document:keydown)': 'onKeydown($event)',
   },
   templateUrl: './notebook.component.html',
   styleUrl: './notebook.component.scss',
@@ -87,18 +103,32 @@ export class NotebookComponent {
   /** Absent en mode écrit. */
   private readonly canvas = viewChild(SmartCanvasComponent);
   private readonly wordEntry = viewChild(WordEntryComponent);
+  private readonly mindMap = viewChild(MindMapComponent);
 
   protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
   protected readonly maxTitleLength = MAX_NOTE_TITLE_LENGTH;
 
   protected readonly notes = signal<NotePage[]>([]);
+  /** Note qui vient d'être créée : son titre s'ouvre en mode renommage. */
+  protected readonly justCreatedId = signal<string | null>(null);
   protected readonly note = signal<NotePage | null>(null);
   /** Signes connus de la page (éléments de la note + candidats proposés). */
   protected readonly signs = signal<ReadonlyMap<string, UserSign>>(new Map());
   protected readonly glyphSigns = computed(() => [...this.signs().values()].filter((s) => s.glyph));
   protected readonly proposal = signal<Proposal | null>(null);
   protected readonly recognizing = signal(false);
+  /** Nombre de traits sur le canevas (boutons « Annuler le trait » / « Effacer »). */
+  protected readonly drawnStrokes = signal(0);
   protected readonly selectedId = signal<string | null>(null);
+  /** Carte mentale : bulle qui reçoit les prochains signes. */
+  protected readonly selectedNodeId = signal<string | null>(null);
+  protected readonly isMap = computed(() => this.note()?.layout === 'map');
+  protected readonly hasElements = computed(() => allElements(this.note()).length > 0);
+  /** Signe de l'élément dont la bulle d'informations est ouverte. */
+  protected readonly selectedSign = computed(() => {
+    const element = allElements(this.note()).find((e) => e.id === this.selectedId());
+    return element ? this.signs().get(element.signId) : undefined;
+  });
   /** Bulle (nom + actions) du signe sélectionné, en coordonnées écran. */
   protected readonly bubble = signal<{ x: number; y: number; above: boolean } | null>(null);
   /** Signe affiché dans la fenêtre de définition. */
@@ -114,6 +144,10 @@ export class NotebookComponent {
     { value: 'both', label: 'Les deux' },
   ];
   protected readonly inputMode = signal<InputMode>(readPrefs().inputMode);
+  protected readonly layoutOptions: { value: 'linear' | 'map'; label: string }[] = [
+    { value: 'linear', label: 'Texte' },
+    { value: 'map', label: 'Carte mentale' },
+  ];
   /** Tout le dictionnaire, chargé pour la saisie écrite. */
   protected readonly allSigns = signal<UserSign[]>([]);
 
@@ -142,6 +176,7 @@ export class NotebookComponent {
   protected setInputMode(mode: InputMode): void {
     if (mode === this.inputMode()) return;
     this.resetRecognition();
+    this.drawnStrokes.set(0);
     this.inputMode.set(mode);
     if (mode === 'type') {
       this.loadAllSigns();
@@ -183,7 +218,8 @@ export class NotebookComponent {
     this.notes.set(notes);
     this.note.set(note);
     this.closeBubble();
-    await this.loadSigns(note.elements.map((e) => e.signId));
+    this.selectedNodeId.set(null);
+    await this.loadSigns(allElements(note).map((e) => e.signId));
 
     // Retour de l'Atelier après « Créer un nouveau signe à partir de ce dessin ».
     const created = this.transfer.takeCreated(note.id);
@@ -199,6 +235,7 @@ export class NotebookComponent {
 
   protected async newNote(): Promise<void> {
     const note = await this.storage.createNote();
+    this.justCreatedId.set(note.id);
     this.switchNote(note.id);
   }
 
@@ -241,9 +278,67 @@ export class NotebookComponent {
 
   protected insert(signId: string): string {
     const element: NoteElement = { id: crypto.randomUUID(), signId, orderIndex: 0 };
-    this.update((n) => ({ ...n, elements: [...n.elements, element] }));
+    if (this.isMap()) {
+      // Carte mentale : dans la bulle sélectionnée, sinon dans une nouvelle bulle.
+      const map = this.note()!.map ?? { nodes: [], links: [] };
+      let target = map.nodes.find((node) => node.id === this.selectedNodeId());
+      const nodes = target
+        ? map.nodes.map((node) => (node.id === target!.id ? { ...node, elements: [...node.elements, element] } : node))
+        : [
+            ...map.nodes,
+            (target = {
+              id: crypto.randomUUID(),
+              ...(this.mindMap()?.suggestPosition() ?? { x: 40, y: 40 }),
+              elements: [element],
+            }),
+          ];
+      this.update((n) => ({ ...n, map: { ...map, nodes } }));
+      this.selectedNodeId.set(target.id);
+    } else {
+      this.update((n) => ({ ...n, elements: [...n.elements, element] }));
+    }
     this.lastInsertedId.set(element.id);
     return element.id;
+  }
+
+  /** Applique `change` à toutes les listes d'éléments (texte et bulles de la carte). */
+  private updateElements(change: (elements: NoteElement[]) => NoteElement[]): void {
+    this.update((n) => ({
+      ...n,
+      elements: change(n.elements),
+      ...(n.map
+        ? { map: { ...n.map, nodes: n.map.nodes.map((node) => ({ ...node, elements: change(node.elements) })) } }
+        : {}),
+    }));
+  }
+
+  protected onMapChange(map: MindMap): void {
+    this.update((n) => ({ ...n, map }));
+  }
+
+  /** Texte ↔ carte mentale. */
+  protected setLayout(layout: 'linear' | 'map'): void {
+    const note = this.note();
+    if (!note || layout === (note.layout ?? 'linear')) return;
+    this.closeBubble();
+    this.selectedNodeId.set(null);
+    if (layout === 'map') {
+      const nodes: MapNode[] = note.elements.length
+        ? [{ id: crypto.randomUUID(), x: 40, y: 40, elements: note.elements }]
+        : [];
+      this.update((n) => ({ ...n, layout: 'map', elements: [], map: { nodes, links: [] } }));
+      if (nodes[0]) this.selectedNodeId.set(nodes[0].id);
+      return;
+    }
+    const map = note.map ?? { nodes: [], links: [] };
+    if (
+      (map.links.length || map.nodes.length > 1) &&
+      !confirm('Repasser en texte ? Les bulles seront mises bout à bout (de haut en bas) et les liens supprimés.')
+    ) {
+      return;
+    }
+    const elements = [...map.nodes].sort((a, b) => a.y - b.y || a.x - b.x).flatMap((node) => node.elements);
+    this.update(({ map: _dropped, ...n }) => ({ ...n, layout: 'linear', elements: [...n.elements, ...elements] }));
   }
 
   protected select(id: string, event: MouseEvent): void {
@@ -279,10 +374,13 @@ export class NotebookComponent {
 
   /** Supprime l'élément sélectionné, à défaut le dernier. */
   protected removeElement(): void {
-    const elements = this.note()?.elements ?? [];
+    const note = this.note();
+    const elements = this.isMap()
+      ? (note?.map?.nodes.find((node) => node.id === this.selectedNodeId())?.elements ?? [])
+      : (note?.elements ?? []);
     const id = this.selectedId() ?? elements.at(-1)?.id;
     if (!id) return;
-    this.update((n) => ({ ...n, elements: n.elements.filter((e) => e.id !== id) }));
+    this.updateElements((list) => list.filter((e) => e.id !== id));
     this.closeBubble();
     const p = this.proposal();
     if (p?.kind === 'corrections' && p.elementId === id) this.proposal.set(null);
@@ -297,7 +395,23 @@ export class NotebookComponent {
     this.proposal.set(null);
   }
 
+  /** Annule le dernier trait du dessin en cours (la reconnaissance repart sur les traits restants). */
+  protected undoStroke(): void {
+    this.canvas()?.undo();
+  }
+
+  /** Ctrl+Z / ⌘+Z : annuler le dernier trait (sauf pendant une saisie de texte). */
+  protected onKeydown(event: KeyboardEvent): void {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z' || event.shiftKey) return;
+    if (this.inputMode() !== 'draw' || !this.drawnStrokes()) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+    event.preventDefault();
+    this.undoStroke();
+  }
+
   protected onStrokesChange(strokes: Stroke[]): void {
+    this.drawnStrokes.set(strokes.length);
     clearTimeout(this.debounce);
     const request = ++this.request;
     this.recognizing.set(false);
@@ -337,7 +451,7 @@ export class NotebookComponent {
 
   /** Pastille de correction : remplace le signe inséré automatiquement. */
   protected correct(elementId: string, signId: string): void {
-    this.update((n) => ({ ...n, elements: n.elements.map((e) => (e.id === elementId ? { ...e, signId } : e)) }));
+    this.updateElements((list) => list.map((e) => (e.id === elementId ? { ...e, signId } : e)));
     this.proposal.set(null);
   }
 
@@ -345,8 +459,9 @@ export class NotebookComponent {
   protected undoAutoInsert(): void {
     const p = this.proposal();
     if (p?.kind !== 'corrections') return;
-    this.update((n) => ({ ...n, elements: n.elements.filter((e) => e.id !== p.elementId) }));
+    this.updateElements((list) => list.filter((e) => e.id !== p.elementId));
     this.canvas()?.setStrokes(p.strokes);
+    this.drawnStrokes.set(p.strokes.length); // setStrokes n'émet pas strokesChange
     this.proposal.set({ kind: 'suggestions', candidates: p.candidates, strokes: p.strokes });
   }
 
@@ -370,7 +485,7 @@ export class NotebookComponent {
 
   /** Candidats autres que le signe inséré (pastilles de correction). */
   protected alternatives(p: { candidates: Candidate[]; elementId: string }): Candidate[] {
-    const inserted = this.note()?.elements.find((e) => e.id === p.elementId)?.signId;
+    const inserted = allElements(this.note()).find((e) => e.id === p.elementId)?.signId;
     return p.candidates.filter((c) => c.sign.id !== inserted);
   }
 

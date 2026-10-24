@@ -1,9 +1,15 @@
 /** Photo source acceptée avant redimensionnement (les photos de smartphone font 3 à 12 Mo). */
 export const MAX_SOURCE_IMAGE_BYTES = 30 * 1024 * 1024;
-export const HANDSHAPE_IMAGE_SIZE = 320;
+/**
+ * 240 px = 120 px d'affichage maximal (fiche de définition) sur écran haute densité.
+ * Seule la forme de la main compte : une compression forte suffit (~3 Ko en WebP).
+ */
+export const HANDSHAPE_IMAGE_SIZE = 240;
+const HANDSHAPE_IMAGE_QUALITY = 0.6;
 
 /**
- * Photo de main → JPEG de HANDSHAPE_IMAGE_SIZE px max (sans recadrage).
+ * Photo de main → WebP (ou JPEG si le navigateur ne sait pas encoder le WebP) de
+ * HANDSHAPE_IMAGE_SIZE px max, sans recadrage.
  * Le ré-encodage via <canvas> supprime les métadonnées EXIF (dont la position GPS) ;
  * l'orientation EXIF est appliquée par le navigateur au décodage.
  */
@@ -21,13 +27,22 @@ export async function toHandshapeImage(file: File): Promise<Blob> {
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Conversion impossible.'))), 'image/jpeg', 0.85),
-    );
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#fff'; // fond blanc pour les images transparentes (sinon noir en JPEG)
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const webp = await encode(canvas, 'image/webp');
+    // Sans support WebP, toBlob renvoie silencieusement du PNG (lourd) : on repasse en JPEG.
+    return webp.type === 'image/webp' ? webp : encode(canvas, 'image/jpeg');
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+function encode(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Conversion impossible.'))), type, HANDSHAPE_IMAGE_QUALITY),
+  );
 }
 
 export function blobToDataUrl(blob: Blob): Promise<string> {

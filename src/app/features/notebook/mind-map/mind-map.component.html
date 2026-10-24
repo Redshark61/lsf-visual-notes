@@ -1,0 +1,103 @@
+<div class="toolbar">
+  <button type="button" (click)="addNode()">+ Bulle</button>
+  <button
+    type="button"
+    [attr.aria-pressed]="linking()"
+    [disabled]="map().nodes.length < 2"
+    (click)="toggleLinking()"
+  >
+    {{ linking() ? 'Annuler la liaison' : 'Relier deux bulles' }}
+  </button>
+  @if (selectedNodeId() && !linking()) {
+    <button type="button" class="danger" (click)="deleteNode()">Supprimer la bulle</button>
+  }
+  @if (selectedLink(); as l) {
+    <button type="button" (click)="toggleArrow()">{{ l.arrow ? 'Changer en trait' : 'Changer en flèche' }}</button>
+    @if (l.arrow) {
+      <button type="button" (click)="reverseLink()">Inverser le sens</button>
+    }
+    <button type="button" class="danger" (click)="deleteLink()">Supprimer le lien</button>
+  }
+  <span class="hint" role="status">{{ hint() }}</span>
+</div>
+
+<div class="viewport" #viewport (scroll)="scrolled.emit()">
+  <div
+    class="surface"
+    [class.linking]="linking()"
+    [style.width.px]="width"
+    [style.height.px]="height"
+    (click)="onBackgroundClick()"
+  >
+    <svg class="links" [attr.width]="width" [attr.height]="height" aria-hidden="true">
+      <defs>
+        <marker id="map-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" />
+        </marker>
+      </defs>
+      @for (l of linkGeoms(); track l.id) {
+        <g class="link" [class.selected]="l.id === selectedLinkId()" (click)="selectLink(l.id, $event)">
+          <line class="hit" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+          <line
+            class="stroke"
+            [attr.x1]="l.x1"
+            [attr.y1]="l.y1"
+            [attr.x2]="l.x2"
+            [attr.y2]="l.y2"
+            [attr.marker-end]="l.arrow ? 'url(#map-arrow)' : null"
+          />
+        </g>
+      }
+    </svg>
+
+    @for (node of map().nodes; track node.id) {
+      <div
+        #nodeEl
+        class="node"
+        role="group"
+        [attr.data-id]="node.id"
+        [attr.aria-label]="'Bulle de ' + node.elements.length + ' signe(s)'"
+        [class.selected]="node.id === selectedNodeId()"
+        [class.link-source]="node.id === linkFrom()"
+        [style.left.px]="pos(node).x"
+        [style.top.px]="pos(node).y"
+        (click)="onNodeClick(node.id, $event)"
+      >
+        <div
+          class="handle"
+          tabindex="0"
+          role="button"
+          aria-label="Déplacer la bulle (glisser, ou flèches du clavier)"
+          (pointerdown)="startDrag(node, $event)"
+          (keydown)="onHandleKey(node, $event)"
+        >
+          <span aria-hidden="true">⠿</span>
+        </div>
+        <div class="content" [class]="'display-' + display()">
+          @for (el of node.elements; track el.id) {
+            @let sign = signs().get(el.signId);
+            <button
+              type="button"
+              class="element"
+              [class.selected]="el.id === selectedElementId()"
+              [class.fresh]="el.id === freshElementId()"
+              [title]="sign?.word ?? 'Signe supprimé'"
+              (click)="onElementClick(el.id, $event, node.id)"
+            >
+              @if (display() !== 'words') {
+                @if (sign?.glyph) {
+                  <svg class="glyph" aria-hidden="true"><use [attr.href]="'#glyph-' + sign!.id" /></svg>
+                } @else {
+                  <span class="glyph word-only" aria-hidden="true">{{ sign?.word ?? '?' }}</span>
+                }
+              }
+              <span [class]="display() === 'signs' ? 'sr-only' : 'caption'">{{ sign?.word ?? 'Signe supprimé' }}</span>
+            </button>
+          } @empty {
+            <span class="empty">Bulle vide</span>
+          }
+        </div>
+      </div>
+    }
+  </div>
+</div>

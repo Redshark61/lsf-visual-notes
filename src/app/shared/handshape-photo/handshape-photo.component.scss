@@ -62,6 +62,12 @@ h2 {
   opacity: 0.75;
 }
 
+.picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .pick input {
   position: absolute;
   width: 1px;

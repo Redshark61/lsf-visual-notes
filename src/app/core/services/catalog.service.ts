@@ -90,11 +90,9 @@ export class CatalogService {
 
   /** Nombre de signes qui utilisent cette configuration (main dominante ou dominée). */
   async countUses(id: string): Promise<number> {
-    const [dominant, nonDominant] = await Promise.all([
-      db.signs.where('anatomy.dominantHandId').equals(id).count(),
-      db.signs.filter((s) => s.anatomy.nonDominantHandId === id).count(),
-    ]);
-    return dominant + nonDominant;
+    return db.signs
+      .filter((s) => [s.anatomy.dominant, s.anatomy.nonDominant].some((h) => h?.handshapeIds.includes(id)))
+      .count();
   }
 
   async deleteCustomHandshape(id: string): Promise<void> {

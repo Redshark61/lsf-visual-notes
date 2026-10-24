@@ -18,13 +18,15 @@ const signs = Object.keys(SHAPES).map((word, i) => ({
   word,
   tags: ['test'],
   anatomy: {
-    dominantHandId: i === 0 ? customId : 'hand_a',
-    dominantMovementId: 'move_arc',
-    dominantDirectionId: 'dir_up',
-    dominantRepeated: true,
-    dominantOrientationId: 'orient_palm_self',
+    dominant: {
+      handshapeIds: i === 0 ? [customId, 'hand_main_plate'] : ['hand_a'],
+      movementIds: ['move_arc', 'move_contact', 'move_symmetric'],
+      directionIds: ['dir_up', 'dir_forward'],
+      repeated: true,
+      orientationId: 'orient_palm_self',
+    },
     ...(i % 2
-      ? { nonDominantHandId: 'hand_b', nonDominantMovementId: 'move_none', nonDominantOrientationId: 'orient_palm_up' }
+      ? { nonDominant: { handshapeIds: ['hand_b'], movementIds: ['move_none'], directionIds: [], orientationId: 'orient_palm_up' } }
       : {}),
     locationZoneIds: ['zone_chin', 'zone_temple'],
   },
@@ -35,7 +37,7 @@ const signs = Object.keys(SHAPES).map((word, i) => ({
 }));
 const valid = {
   format: 'lsf-visual-notes',
-  version: 2,
+  version: 3,
   exportedAt: new Date().toISOString(),
   customHandshapes: [{ id: customId, name: 'Ma main', image: jpeg, createdAt: 1, updatedAt: 1 }],
   signs,
@@ -66,12 +68,68 @@ describe('parseBackup', () => {
     }
   });
 
-  it('lit encore les sauvegardes v1 (normalisées en v2)', () => {
-    const r = parseBackup(
-      JSON.stringify({ format: 'lsf-visual-notes', version: 1, exportedAt: 'x', signs: signs.slice(1), notes: [] }),
-      catalog,
-    );
-    expect(r.ok && r.backup.version === 2 && r.backup.customHandshapes.length === 0).toBe(true);
+  it('convertit les sauvegardes v1/v2 (une configuration et un mouvement par main) au format v3', () => {
+    const legacySign = {
+      id: randomUUID(),
+      word: 'Ancien',
+      tags: [],
+      anatomy: {
+        dominantHandId: 'hand_a',
+        dominantMovementId: 'move_arc',
+        dominantDirectionId: 'dir_up',
+        nonDominantHandId: 'hand_b',
+        nonDominantMovementId: 'move_none',
+        locationZoneIds: ['zone_chin'],
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    for (const version of [1, 2]) {
+      const r = parseBackup(
+        JSON.stringify({ format: 'lsf-visual-notes', version, exportedAt: 'x', signs: [legacySign], notes: [] }),
+        catalog,
+      );
+      expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+      if (r.ok) {
+        expect(r.backup.version).toBe(3);
+        expect(r.backup.customHandshapes).toEqual([]);
+        expect(r.backup.signs[0].anatomy.dominant).toEqual({
+          handshapeIds: ['hand_a'],
+          movementIds: ['move_arc'],
+          directionIds: ['dir_up'],
+        });
+      }
+    }
+  });
+
+  it('rejette une ancienne sauvegarde dont la conversion donne un signe invalide', () => {
+    const bad = { id: randomUUID(), word: 'x', tags: [], anatomy: { dominantHandId: 'hand_inventee', dominantMovementId: 'move_arc', locationZoneIds: [] }, createdAt: 1, updatedAt: 1 };
+    const r = parseBackup(JSON.stringify({ format: 'lsf-visual-notes', version: 2, exportedAt: 'x', signs: [bad], notes: [] }), catalog);
+    expect(r.ok).toBe(false);
+  });
+
+  it('accepte une note en carte mentale', () => {
+    const [a, b] = [randomUUID(), randomUUID()];
+    const r = parse((bk) => {
+      bk.notes[0].layout = 'map';
+      bk.notes[0].map = {
+        nodes: [
+          { id: a, x: 40, y: 40, elements: [{ id: randomUUID(), signId: signs[0].id, orderIndex: 0 }] },
+          { id: b, x: 400, y: 200, elements: [] },
+        ],
+        links: [{ id: randomUUID(), from: a, to: b, arrow: true }],
+      };
+    });
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+  });
+
+  it('accepte les glyphes enregistrés avant le passage à 48 points (32 points)', () => {
+    expect(parse((b) => void (b.signs[1].glyph.normalizedGesturePoints = b.signs[1].glyph.normalizedGesturePoints.slice(0, 32))).ok).toBe(true);
+  });
+
+  it("accepte la couleur d'affichage d'un glyphe (globale ou par trait)", () => {
+    expect(parse((b) => void (b.signs[1].glyph.color = '#e0a100')).ok).toBe(true);
+    expect(parse((b) => void (b.signs[1].glyph.strokes[0].color = '#c62828')).ok).toBe(true);
   });
 
   it("accepte une configuration personnelle déjà présente dans l'application", () => {
@@ -87,14 +145,29 @@ describe('parseBackup', () => {
   it.each<[string, (b: any) => void | string, RegExp?]>([
     ['JSON invalide', () => '{oops', /JSON valide/],
     ['autre format', (b) => void (b.format = 'autre')],
-    ['version future', (b) => void (b.version = 3), /Version/],
-    ['configuration inconnue', (b) => void (b.signs[1].anatomy.dominantHandId = 'hand_inventee'), /signs\[1\]\.anatomy\.dominantHandId/],
+    ['version future', (b) => void (b.version = 4), /Version/],
+    ['configuration inconnue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = ['hand_inventee']), /signs\[1\]\.anatomy\.dominant\.handshapeIds\[0\]/],
     ['config perso absente', (b) => void (b.customHandshapes = []), /Configuration personnelle absente/],
+    ['suite de configurations vide', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = [])],
+    ['suite de configurations trop longue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = Array(6).fill('hand_a'))],
+    ['aucun mouvement', (b) => void (b.signs[1].anatomy.dominant.movementIds = [])],
+    ['direction inconnue', (b) => void b.signs[1].anatomy.dominant.directionIds.push('dir_x'), /Direction/],
+    ['ancien format dans une v3', (b) => void (b.signs[1].anatomy = { dominantHandId: 'hand_a', dominantMovementId: 'move_arc', locationZoneIds: [] })],
     ['zone inconnue', (b) => void b.signs[0].anatomy.locationZoneIds.push('zone_x'), /locationZoneIds\[2\]/],
-    ['orientation inconnue', (b) => void (b.signs[0].anatomy.dominantOrientationId = 'orient_x'), /Orientation/],
-    ['répétition non booléenne', (b) => void (b.signs[0].anatomy.dominantRepeated = 'oui')],
+    ['orientation inconnue', (b) => void (b.signs[0].anatomy.dominant.orientationId = 'orient_x'), /Orientation/],
+    ['répétition non booléenne', (b) => void (b.signs[0].anatomy.dominant.repeated = 'oui')],
     ['balise dans svgPathData', (b) => void (b.signs[1].glyph.svgPathData = 'M0,0 Z"/><script>alert(1)</script>'), /svgPathData/],
-    ['33 points', (b) => void b.signs[1].glyph.normalizedGesturePoints.push({ x: 0, y: 0, strokeId: 1 })],
+    ['lien vers une bulle inexistante', (b) => void ((b.notes[0].layout = 'map'), (b.notes[0].map = { nodes: [{ id: randomUUID(), x: 0, y: 0, elements: [] }], links: [{ id: randomUUID(), from: randomUUID(), to: randomUUID(), arrow: true }] })), /bulle inexistante/],
+    ['lien d\'une bulle vers elle-même', (b) => { const id = randomUUID(); b.notes[0].map = { nodes: [{ id, x: 0, y: 0, elements: [] }], links: [{ id: randomUUID(), from: id, to: id, arrow: false }] }; }],
+    ['bulle hors de la surface', (b) => void (b.notes[0].map = { nodes: [{ id: randomUUID(), x: 99_999, y: 0, elements: [] }], links: [] })],
+    ['disposition inconnue', (b) => void (b.notes[0].layout = 'grille')],
+    ['couleur de trait piégée', (b) => void (b.signs[1].glyph.strokes[0].color = 'url(javascript:alert(1))')],
+    ['balise dans un trait', (b) => void (b.signs[1].glyph.strokes[0].d = 'M0,0 Z"/><script>')],
+    ['nombre de traits incohérent', (b) => void b.signs[1].glyph.strokes.push({ d: 'M0,0 Z' }), /Un tracé par trait/],
+    ['couleur non hexadécimale', (b) => void (b.signs[1].glyph.color = 'red')],
+    ['couleur piégée', (b) => void (b.signs[1].glyph.color = 'url(javascript:alert(1))')],
+    ['49 points', (b) => void b.signs[1].glyph.normalizedGesturePoints.push({ x: 0, y: 0, strokeId: 1 })],
+    ['40 points', (b) => void (b.signs[1].glyph.normalizedGesturePoints = b.signs[1].glyph.normalizedGesturePoints.slice(0, 40))],
     ['coordonnée hors bornes', (b) => void (b.signs[1].glyph.normalizedGesturePoints[0].x = 1e9)],
     ['champ inconnu', (b) => void (b.signs[0].isAdmin = true), /isAdmin/],
     ['id non UUID', (b) => void (b.signs[0].id = '../../etc')],

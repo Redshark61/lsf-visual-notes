@@ -17,25 +17,43 @@ export interface SignGlyph {
   normalizedGesturePoints: StrokePoint[];
   boundingBoxRatio: number;
   strokeCount: number;
-  /** Chemin "M ... Z" dans un viewBox 0 0 100 100, jamais de balise <svg>. */
+  /** Chemin "M ... Z" de tous les traits dans un viewBox 0 0 100 100, jamais de balise <svg>. */
   svgPathData: string;
+  /**
+   * Les mêmes traits un par un, avec leur couleur d'affichage (#rrggbb ; absente = encre).
+   * Une entrée par trait (strokes.length === strokeCount). La couleur n'influe pas sur la reconnaissance.
+   */
+  strokes?: GlyphStroke[];
+  /** Ancien format : une seule couleur pour tout le glyphe (utilisée si `strokes` est absent). */
+  color?: string;
 }
 
-/**
- * Paramètres manuels du signe, pour chaque main : configuration, mouvement (+ direction, répétition),
- * orientation de la paume. Seuls la configuration et le mouvement de la main dominante sont obligatoires.
- */
+export interface GlyphStroke {
+  d: string;
+  color?: string;
+}
+
+/** Longueur maximale d'une suite de configurations pour une main. */
+export const MAX_HANDSHAPE_SEQUENCE = 5;
+
+/** Paramètres manuels d'une main. */
+export interface HandSpec {
+  /** Suite de configurations, dans l'ordre (ex. index → main plate). Au moins une. */
+  handshapeIds: string[];
+  /** Mouvements combinés (ex. rotation + contact + symétrique). Au moins un (« move_none » si statique). */
+  movementIds: string[];
+  /** Directions du mouvement (vide si non précisé ou statique). */
+  directionIds: string[];
+  repeated?: boolean;
+  /** Orientation de la paume. */
+  orientationId?: string;
+}
+
+/** Seules la configuration et le mouvement de la main dominante sont obligatoires. */
 export interface SignAnatomy {
-  dominantHandId: string;
-  dominantMovementId: string;
-  dominantDirectionId?: string;
-  dominantRepeated?: boolean;
-  dominantOrientationId?: string;
-  nonDominantHandId?: string;
-  nonDominantMovementId?: string;
-  nonDominantDirectionId?: string;
-  nonDominantRepeated?: boolean;
-  nonDominantOrientationId?: string;
+  dominant: HandSpec;
+  /** Absent pour un signe à une main. */
+  nonDominant?: HandSpec;
   /** Zones dans l'ordre du trajet (ex. menton → torse). Peut être vide. */
   locationZoneIds: string[];
 }
@@ -58,9 +76,39 @@ export interface NoteElement {
   orderIndex: number;
 }
 
+/** Dimensions de la surface d'une carte mentale (px CSS). */
+export const MIND_MAP_WIDTH = 2400;
+export const MIND_MAP_HEIGHT = 1600;
+
+/** Bulle de carte mentale : une suite de signes, positionnée librement. */
+export interface MapNode {
+  id: string;
+  x: number;
+  y: number;
+  elements: NoteElement[];
+}
+
+/** Lien entre deux bulles : flèche (de `from` vers `to`) ou simple trait. */
+export interface MapLink {
+  id: string;
+  from: string;
+  to: string;
+  arrow: boolean;
+}
+
+export interface MindMap {
+  nodes: MapNode[];
+  links: MapLink[];
+}
+
 export interface NotePage {
   id: string;
   title: string;
+  /** Contenu de la disposition « texte » (flux linéaire). */
   elements: NoteElement[];
+  /** Absent = « linear ». */
+  layout?: 'linear' | 'map';
+  /** Contenu de la disposition « carte mentale ». */
+  map?: MindMap;
   updatedAt: number;
 }

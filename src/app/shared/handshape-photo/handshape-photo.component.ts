@@ -17,6 +17,7 @@ export class HandshapePhotoComponent {
 
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly fileInput = viewChild.required<ElementRef<HTMLInputElement>>('file');
+  private readonly cameraInput = viewChild.required<ElementRef<HTMLInputElement>>('camera');
 
   protected readonly image = signal<Blob | null>(null);
   protected readonly previewUrl = signal<string | null>(null);
@@ -92,6 +93,7 @@ export class HandshapePhotoComponent {
     this.name.set('');
     this.error.set(null);
     this.fileInput().nativeElement.value = '';
+    this.cameraInput().nativeElement.value = '';
   }
 
   private setPreview(blob: Blob | null): void {

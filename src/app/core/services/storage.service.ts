@@ -5,7 +5,15 @@ import { BACKUP_FORMAT, BACKUP_VERSION, Backup } from '../models/backup.model';
 import { CustomHandshape } from '../models/catalog.model';
 import { blobToDataUrl, dataUrlToBlob } from '../utils/image';
 import { CatalogService } from './catalog.service';
-import { NotePage, SignAnatomy, SignGlyph, UserSign } from '../models/sign.model';
+import {
+  HandSpec,
+  MAX_HANDSHAPE_SEQUENCE,
+  NoteElement,
+  NotePage,
+  SignAnatomy,
+  SignGlyph,
+  UserSign,
+} from '../models/sign.model';
 import { RecognitionService } from './recognition.service';
 
 export const MAX_WORD_LENGTH = 80;
@@ -53,37 +61,44 @@ async function mergeInto<T extends { id: string; updatedAt: number }>(
   await table.bulkPut(toPut);
 }
 
+const STATIC_MOVEMENT = 'move_none';
+
+/**
+ * HandSpec propre : sans doublons, au moins une configuration et un mouvement ;
+ * « statique » exclu s'il est combiné à de vrais mouvements ; direction et répétition
+ * seulement s'il y a un mouvement. Renvoie null si la configuration manque.
+ */
+export function normalizeHand(hand: HandSpec | null | undefined): HandSpec | null {
+  const handshapeIds = [...new Set(hand?.handshapeIds ?? [])].filter(Boolean).slice(0, MAX_HANDSHAPE_SEQUENCE);
+  if (!hand || handshapeIds.length === 0) return null;
+  let movementIds = [...new Set(hand.movementIds)].filter(Boolean);
+  if (movementIds.length > 1) movementIds = movementIds.filter((m) => m !== STATIC_MOVEMENT);
+  if (movementIds.length === 0) movementIds = [STATIC_MOVEMENT];
+  const moving = movementIds[0] !== STATIC_MOVEMENT;
+  return {
+    handshapeIds,
+    movementIds,
+    directionIds: moving ? [...new Set(hand.directionIds)].filter(Boolean) : [],
+    ...(moving && hand.repeated ? { repeated: true } : {}),
+    ...(hand.orientationId ? { orientationId: hand.orientationId } : {}),
+  };
+}
+
 function buildSign(draft: SignDraft, meta: Pick<UserSign, 'id' | 'createdAt' | 'updatedAt'>): UserSign {
   const word = draft.word.trim().slice(0, MAX_WORD_LENGTH);
   if (!word) throw new Error('Le mot est obligatoire');
-  const a = draft.anatomy;
-  if (!a.dominantHandId || !a.dominantMovementId) throw new Error('La main dominante est obligatoire');
+  const dominant = normalizeHand(draft.anatomy.dominant);
+  if (!dominant || !draft.anatomy.dominant.movementIds.length) throw new Error('La main dominante est obligatoire');
+  const nonDominant = normalizeHand(draft.anatomy.nonDominant);
   const note = draft.note?.trim().slice(0, MAX_NOTE_LENGTH);
-  /** Direction et répétition n'ont de sens que s'il y a un mouvement. */
-  const moving = (movementId: string | undefined) => !!movementId && movementId !== 'move_none';
-  const optional = <K extends string, V>(key: K, value: V | undefined | null | false) =>
-    (value ? { [key]: value } : {}) as Partial<Record<K, V>>;
-  const nonDominantMovementId = a.nonDominantMovementId ?? 'move_none';
   return {
     id: meta.id,
     word,
     tags: normalizeTags(draft.tags),
     anatomy: {
-      dominantHandId: a.dominantHandId,
-      dominantMovementId: a.dominantMovementId,
-      ...optional('dominantDirectionId', moving(a.dominantMovementId) && a.dominantDirectionId),
-      ...optional('dominantRepeated', moving(a.dominantMovementId) && a.dominantRepeated),
-      ...optional('dominantOrientationId', a.dominantOrientationId),
-      ...(a.nonDominantHandId
-        ? {
-            nonDominantHandId: a.nonDominantHandId,
-            nonDominantMovementId,
-            ...optional('nonDominantDirectionId', moving(nonDominantMovementId) && a.nonDominantDirectionId),
-            ...optional('nonDominantRepeated', moving(nonDominantMovementId) && a.nonDominantRepeated),
-            ...optional('nonDominantOrientationId', a.nonDominantOrientationId),
-          }
-        : {}),
-      locationZoneIds: [...new Set(a.locationZoneIds)],
+      dominant,
+      ...(nonDominant ? { nonDominant } : {}),
+      locationZoneIds: [...new Set(draft.anatomy.locationZoneIds)],
     },
     ...(draft.glyph ? { glyph: draft.glyph } : {}),
     ...(note ? { note } : {}),
@@ -181,10 +196,14 @@ export class StorageService {
 
   /** Enregistre la note (orderIndex recalculé d'après l'ordre du tableau). */
   async saveNote(note: NotePage): Promise<NotePage> {
+    const order = (elements: NoteElement[]) => elements.map((e, orderIndex) => ({ ...e, orderIndex }));
     const saved: NotePage = {
       ...note,
       title: note.title.trim().slice(0, MAX_NOTE_TITLE_LENGTH) || defaultNoteTitle(),
-      elements: note.elements.map((e, orderIndex) => ({ ...e, orderIndex })),
+      elements: order(note.elements),
+      ...(note.map
+        ? { map: { ...note.map, nodes: note.map.nodes.map((n) => ({ ...n, elements: order(n.elements) })) } }
+        : {}),
       updatedAt: Date.now(),
     };
     await db.notes.put(saved);

@@ -1,0 +1,162 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.section {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+
+  &[open] > summary {
+    border-bottom: 1px solid var(--color-border);
+  }
+}
+
+summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  padding: 0.65rem 0.85rem;
+  cursor: pointer;
+  list-style: none;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &::before {
+    content: '▸';
+    transition: transform 0.15s;
+  }
+
+  .title {
+    font-weight: 600;
+  }
+
+  .value {
+    flex: 1;
+    min-width: 0;
+    text-align: right;
+    font-size: 0.9rem;
+    opacity: 0.75;
+
+    &.missing {
+      color: #8a4a0f;
+      opacity: 1;
+    }
+  }
+}
+
+.section[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+}
+
+.hint,
+.source {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.sequence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  li + li::before {
+    content: '→';
+    margin: 0 0.25rem;
+    opacity: 0.6;
+  }
+}
+
+.slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &[aria-pressed='true'],
+  &.pending {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+
+  &.pending {
+    padding: 0.3rem 0.7rem;
+    border-style: dashed;
+    box-shadow: none;
+    cursor: default;
+  }
+
+  img {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+}
+
+.remove {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.link {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--color-primary);
+  text-decoration: underline;
+  cursor: pointer;
+
+  small {
+    opacity: 0.75;
+  }
+}
+
+.repeat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+
+  input {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+}

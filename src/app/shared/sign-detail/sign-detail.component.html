@@ -1,7 +1,7 @@
 <article class="detail">
   <header>
     @if (sign().glyph; as g) {
-      <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Glyphe"><path [attr.d]="g.svgPathData" /></svg>
+      <svg class="glyph" [attr.viewBox]="viewBox" aria-label="Glyphe">@for (p of g | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}</svg>
     }
     <div>
       <h2>{{ sign().word }}</h2>
@@ -18,14 +18,18 @@
   <div class="hands">
     @for (h of hands(); track h.label) {
       <section class="hand">
-        <h3>{{ h.label }}</h3>
-        @if (h.hand?.imageUrl; as url) {
-          <img [src]="url" [alt]="'Configuration ' + h.hand.name" />
-        }
-        <p>
-          <strong>{{ h.hand?.name ?? h.handId }}</strong><br />
-          {{ h.description }}
-        </p>
+        <h3>{{ h.label }}@if (h.mirrored) { <small>(en miroir)</small>}</h3>
+        <ol class="steps" [class.mirrored]="h.mirrored">
+          @for (step of h.steps; track $index) {
+            <li>
+              @if (step.imageUrl; as url) {
+                <img [src]="url" [alt]="'Configuration ' + step.name" />
+              }
+              <strong>{{ step.name }}</strong>
+            </li>
+          }
+        </ol>
+        <p>{{ h.description }}</p>
       </section>
     }
   </div>

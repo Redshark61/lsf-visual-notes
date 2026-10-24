@@ -42,14 +42,27 @@ export function strokeToSvgPath(stroke: Stroke, options: StrokeOptions = PEN_OPT
  * Tracé de rendu stocké dans UserSign.svgPathData : centré et mis à l'échelle (proportionnellement)
  * dans un viewBox fixe GLYPH_VIEWBOX x GLYPH_VIEWBOX, quelle que soit la taille du dessin d'origine.
  */
-export function strokesToGlyphPath(strokes: Stroke[], margin = 10, penSize = 6): string {
+/**
+ * Épaisseur du trait dans le glyphe : celle du canevas réduite dans la même proportion que le dessin
+ * (un grand dessin détaillé reste fin), bornée pour rester lisible en petit (56 px dans les notes).
+ */
+const MIN_GLYPH_PEN = 2.5;
+const MAX_GLYPH_PEN = 6;
+
+export function strokesToGlyphPath(strokes: Stroke[], margin = 10): string {
+  return strokesToGlyphPaths(strokes, margin).join(' ');
+}
+
+/** Comme strokesToGlyphPath, mais un chemin par trait non vide (dans le même repère). */
+export function strokesToGlyphPaths(strokes: Stroke[], margin = 10): string[] {
   const all = strokes.flat();
-  if (all.length === 0) return '';
+  if (all.length === 0) return [];
   const { minX, minY, width, height } = boundingBox(all);
   const inner = GLYPH_VIEWBOX - 2 * margin;
   const k = inner / (Math.max(width, height) || 1);
   const offX = margin + (inner - width * k) / 2;
   const offY = margin + (inner - height * k) / 2;
+  const penSize = Math.min(MAX_GLYPH_PEN, Math.max(MIN_GLYPH_PEN, (PEN_OPTIONS.size ?? 8) * k));
   return strokes
     .filter((s) => s.length > 0)
     .map((s) =>
@@ -57,6 +70,5 @@ export function strokesToGlyphPath(strokes: Stroke[], margin = 10, penSize = 6):
         s.map((p) => ({ ...p, x: offX + (p.x - minX) * k, y: offY + (p.y - minY) * k })),
         { ...PEN_OPTIONS, size: penSize },
       ),
-    )
-    .join(' ');
+    );
 }

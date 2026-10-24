@@ -1,7 +1,12 @@
 import { Point, Stroke, StrokePoint } from '../models/sign.model';
 
-/** Taille du nuage de points comparé par $Q. */
-export const NORMALIZED_POINT_COUNT = 32;
+/**
+ * Taille du nuage de points comparé par $Q. 48 plutôt que 32 : meilleure discrimination des dessins
+ * à plusieurs traits (mesuré : 89 % → 93 % de bon premier choix), sans perte sur les formes simples.
+ */
+export const NORMALIZED_POINT_COUNT = 48;
+/** Tailles acceptées : 32 pour les signes enregistrés avant le passage à 48. */
+export const SUPPORTED_POINT_COUNTS: readonly number[] = [32, 48];
 
 export interface BoundingBox {
   minX: number;

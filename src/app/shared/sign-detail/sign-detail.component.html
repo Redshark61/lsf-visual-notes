@@ -15,6 +15,16 @@
     </div>
   </header>
 
+  @if (video(); as v) {
+    <section class="video">
+      <app-blob-video [blob]="v" [label]="'Vidéo du signe ' + sign().word" />
+      <button type="button" class="save" (click)="saveVideo()">Enregistrer / partager la vidéo</button>
+      @if (shareError(); as e) {
+        <p class="error" role="alert">{{ e }}</p>
+      }
+    </section>
+  }
+
   <div class="hands">
     @for (h of hands(); track h.label) {
       <section class="hand">

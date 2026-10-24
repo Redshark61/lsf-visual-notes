@@ -20,6 +20,8 @@ export class BackupComponent {
   protected readonly counts = signal<{ signs: number; notes: number } | null>(null);
   protected readonly canShare = typeof navigator.canShare === 'function';
   protected readonly busy = signal(false);
+  /** Les vidéos alourdissent le fichier (~150 Ko par signe) : on peut les laisser sur l'appareil. */
+  protected readonly includeVideos = signal(true);
   protected readonly exportError = signal<string | null>(null);
 
   protected readonly pending = signal<{ fileName: string; backup: Backup } | null>(null);
@@ -40,7 +42,7 @@ export class BackupComponent {
   // --- Export
 
   private async buildFile(): Promise<File> {
-    const backup = await this.storage.exportBackup();
+    const backup = await this.storage.exportBackup(this.includeVideos());
     const date = new Date().toISOString().slice(0, 10);
     return new File([JSON.stringify(backup, null, 2)], `lsf-notes-${date}.json`, { type: 'application/json' });
   }
@@ -91,7 +93,7 @@ export class BackupComponent {
     this.report.set(null);
     if (!file) return;
     if (file.size > MAX_BACKUP_BYTES) {
-      this.importErrors.set(['Fichier trop volumineux (20 Mo maximum).']);
+      this.importErrors.set(['Fichier trop volumineux (100 Mo maximum).']);
       return;
     }
     try {

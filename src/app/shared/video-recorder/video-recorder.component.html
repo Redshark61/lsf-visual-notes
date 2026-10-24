@@ -1,0 +1,65 @@
+@switch (phase()) {
+  @case ('review') {
+    @if (result(); as r) {
+      <app-blob-video [blob]="r.blob" label="Vidéo enregistrée" />
+      <p class="meta">{{ r.durationMs / 1000 | number: '1.1-1' }} s · {{ r.blob.size / 1024 | number: '1.0-0' }} Ko</p>
+      <div class="actions">
+        <button type="button" (click)="startCamera()">Refaire</button>
+        <button type="button" class="primary" (click)="use()">Utiliser cette vidéo</button>
+      </div>
+    }
+  }
+  @case ('error') {
+    <p class="error" role="alert">{{ error() }}</p>
+    <div class="actions">
+      @if (supported) {
+        <button type="button" (click)="startCamera()">Réessayer</button>
+      }
+      <ng-container *ngTemplateOutlet="fallback" />
+    </div>
+  }
+  @case ('idle') {
+    <p class="hint">
+      Filmez-vous en train de signer ({{ maxSeconds }} secondes maximum, sans son). La vidéo reste sur cet appareil.
+    </p>
+    <div class="actions">
+      @if (supported) {
+        <button type="button" class="primary" (click)="startCamera()">Activer la caméra</button>
+      } @else {
+        <ng-container *ngTemplateOutlet="fallback" />
+      }
+    </div>
+  }
+  @default {
+    <!-- starting, preview, countdown, recording : flux de la caméra, en miroir comme un reflet -->
+    <div class="live">
+      <video #live autoplay muted playsinline aria-label="Aperçu de la caméra"></video>
+      @if (phase() === 'countdown') {
+        <span class="overlay countdown" aria-live="assertive">{{ countdown() }}</span>
+      }
+      @if (phase() === 'recording') {
+        <span class="overlay rec" aria-live="polite">● {{ elapsed() | number: '1.1-1' }} / {{ maxSeconds }} s</span>
+      }
+    </div>
+    <div class="actions">
+      @switch (phase()) {
+        @case ('starting') {
+          <span class="hint">Ouverture de la caméra…</span>
+        }
+        @case ('preview') {
+          <button type="button" class="primary" (click)="record()">Enregistrer ({{ maxSeconds }} s max)</button>
+        }
+        @case ('recording') {
+          <button type="button" class="primary" (click)="stop()">Arrêter</button>
+        }
+      }
+    </div>
+  }
+}
+
+<ng-template #fallback>
+  <label class="file">
+    <span class="button">Choisir ou filmer une vidéo</span>
+    <input #file type="file" accept="video/mp4,video/webm,video/*" capture="user" (change)="onFile(file)" />
+  </label>
+</ng-template>

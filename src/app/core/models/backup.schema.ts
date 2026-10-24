@@ -4,16 +4,23 @@ import { CUSTOM_HANDSHAPE_ID_PATTERN, Catalog } from './catalog.model';
 import { BACKUP_FORMAT, BACKUP_VERSION, Backup, SUPPORTED_BACKUP_VERSIONS } from './backup.model';
 import { SUPPORTED_POINT_COUNTS, MAX_BOUNDING_BOX_RATIO } from '../utils/gesture-geometry';
 import { isSignV2, migrateSignV2 } from '../db/migrations';
-import { MAX_HANDSHAPE_SEQUENCE, MIND_MAP_HEIGHT, MIND_MAP_WIDTH } from './sign.model';
+import {
+  MAX_HANDSHAPE_SEQUENCE,
+  MAX_VIDEO_BYTES,
+  MAX_VIDEO_DURATION_MS,
+  MIND_MAP_HEIGHT,
+  MIND_MAP_WIDTH,
+  VIDEO_MIME_TYPES,
+} from './sign.model';
 import { GLYPH_COLOR_PATTERN } from './glyph-colors';
 
-export { BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupHandshape } from './backup.model';
+export { BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupHandshape, type BackupVideo } from './backup.model';
 
 // Messages d'erreur en français ; pas de new Function() (CSP stricte, voir vercel.json).
 z.config({ ...fr(), jitless: true });
 
-/** Garde-fous contre un fichier piégé ou corrompu (DoS local). */
-export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
+/** Garde-fous contre un fichier piégé ou corrompu (DoS local). Vidéos comprises. */
+export const MAX_BACKUP_BYTES = 100 * 1024 * 1024;
 export const MAX_SIGNS = 10_000;
 export const MAX_NOTES = 2_000;
 export const MAX_ELEMENTS_PER_NOTE = 5_000;
@@ -24,6 +31,9 @@ export const MAX_MAP_LINKS = 1_000;
 const MAX_IMAGE_DATA_URL_LENGTH = 1_000_000;
 /** Images matricielles uniquement : pas de SVG (qui peut contenir du script). */
 const IMAGE_DATA_URL_PATTERN = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+/** Vidéos MP4 ou WebM uniquement, en base64 (~4/3 de la taille binaire). */
+const VIDEO_DATA_URL_PATTERN = /^data:video\/(mp4|webm);base64,[A-Za-z0-9+/]+={0,2}$/;
+const MAX_VIDEO_DATA_URL_LENGTH = Math.ceil((MAX_VIDEO_BYTES * 4) / 3) + 64;
 /** Un glyphe de 32 points tient en quelques Ko ; au-delà, le fichier a été modifié. */
 const MAX_SVG_PATH_LENGTH = 50_000;
 /** Uniquement des commandes de tracé et des nombres : jamais de balise ni de script. */
@@ -52,6 +62,9 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
     .check(
       z.refine((v) => hands.has(v) || CUSTOM_HANDSHAPE_ID_PATTERN.test(v), 'Configuration inconnue du catalogue'),
     );
+
+  const videoMime = z.enum(VIDEO_MIME_TYPES);
+  const videoDuration = z.int().check(z.gte(0), z.lte(MAX_VIDEO_DURATION_MS * 2));
 
   const handSpec = z.strictObject({
     handshapeIds: z.array(hand).check(z.minLength(1), z.maxLength(MAX_HANDSHAPE_SEQUENCE)),
@@ -99,6 +112,13 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
       locationZoneIds: z.array(known(zones, 'Emplacement')).check(z.maxLength(zones.size)),
     }),
     glyph: z.optional(glyph),
+    video: z.optional(
+      z.strictObject({
+        mimeType: videoMime,
+        durationMs: videoDuration,
+        bytes: z.int().check(z.gte(1), z.lte(MAX_VIDEO_BYTES)),
+      }),
+    ),
     note: z.optional(z.string().check(z.maxLength(2000))),
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -156,6 +176,21 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
       format: z.literal(BACKUP_FORMAT),
       version: z.literal(BACKUP_VERSION),
       exportedAt: z.string().check(z.maxLength(40)),
+      videos: z.optional(
+        z
+          .array(
+            z.strictObject({
+              signId: id,
+              mimeType: videoMime,
+              durationMs: videoDuration,
+              data: z.string().check(z.maxLength(MAX_VIDEO_DATA_URL_LENGTH), z.regex(VIDEO_DATA_URL_PATTERN)),
+            }),
+          )
+          .check(
+            z.maxLength(MAX_SIGNS),
+            z.refine((videos) => new Set(videos.map((v) => v.signId)).size === videos.length, 'Deux vidéos pour un même signe'),
+          ),
+      ),
       customHandshapes: z.optional(
         z
           .array(customHandshape)
@@ -166,6 +201,12 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
     })
     .check(
       z.superRefine((backup, ctx) => {
+        const signIds = new Set(backup.signs.map((s) => s.id));
+        backup.videos?.forEach((v, i) => {
+          if (!signIds.has(v.signId)) {
+            ctx.addIssue({ code: 'custom', path: ['videos', i, 'signId'], message: 'Vidéo sans signe correspondant', input: v.signId });
+          }
+        });
         const available = new Set([...existingCustomIds, ...(backup.customHandshapes ?? []).map((h) => h.id)]);
         backup.signs.forEach((s, i) => {
           for (const key of ['dominant', 'nonDominant'] as const) {
@@ -192,10 +233,12 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
 function upgradeLegacy(json: Record<string, unknown>): Record<string, unknown> {
   if (json['version'] === BACKUP_VERSION) return json;
   const signs = json['signs'];
+  // Seules les sauvegardes v1 et v2 contiennent des signes à plat ; v3 a déjà le format actuel.
+  const flat = json['version'] === 1 || json['version'] === 2;
   return {
     ...json,
     version: BACKUP_VERSION,
-    signs: Array.isArray(signs) ? signs.map((s) => (isSignV2(s) ? migrateSignV2(s) : s)) : signs,
+    signs: flat && Array.isArray(signs) ? signs.map((s) => (isSignV2(s) ? migrateSignV2(s) : s)) : signs,
   };
 }
 
@@ -210,7 +253,7 @@ export function parseBackup(
   catalog: Catalog,
   existingCustomIds: ReadonlySet<string> = new Set(),
 ): BackupParseResult {
-  if (raw.length > MAX_BACKUP_BYTES) return { ok: false, errors: ['Fichier trop volumineux (20 Mo maximum).'] };
+  if (raw.length > MAX_BACKUP_BYTES) return { ok: false, errors: ['Fichier trop volumineux (100 Mo maximum).'] };
   let json: unknown;
   try {
     json = JSON.parse(raw);
@@ -225,8 +268,9 @@ export function parseBackup(
   }
   const result = backupSchema(catalog, existingCustomIds).safeParse(upgradeLegacy(json as Record<string, unknown>));
   if (result.success) {
-    const data = result.data as Omit<Backup, 'customHandshapes'> & { customHandshapes?: Backup['customHandshapes'] };
-    return { ok: true, backup: { ...data, customHandshapes: data.customHandshapes ?? [] } };
+    const data = result.data as Omit<Backup, 'customHandshapes' | 'videos'> &
+      Partial<Pick<Backup, 'customHandshapes' | 'videos'>>;
+    return { ok: true, backup: { ...data, customHandshapes: data.customHandshapes ?? [], videos: data.videos ?? [] } };
   }
   const errors = result.error.issues.slice(0, 5).map((issue) => {
     const path = issue.path.reduce<string>(

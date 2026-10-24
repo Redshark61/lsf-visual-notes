@@ -10,6 +10,9 @@ import {
   MAX_HANDSHAPE_SEQUENCE,
   NoteElement,
   NotePage,
+  SignVideo,
+  SignVideoInfo,
+  VideoMimeType,
   SignAnatomy,
   SignGlyph,
   UserSign,
@@ -33,6 +36,14 @@ export interface SignDraft {
   anatomy: SignAnatomy;
   glyph?: SignGlyph;
   note?: string;
+  /** Nouvelle vidéo ; null = supprimer la vidéo existante ; absent = ne pas y toucher. */
+  video?: VideoDraft | null;
+}
+
+export interface VideoDraft {
+  blob: Blob;
+  mimeType: VideoMimeType;
+  durationMs: number;
 }
 
 /** "Famille, maison ,famille" → ["famille", "maison"] */
@@ -45,7 +56,7 @@ async function mergeInto<T extends { id: string; updatedAt: number }>(
   table: Table<T, string>,
   incoming: T[],
   counts: { added: number; updated: number; skipped: number },
-): Promise<void> {
+): Promise<T[]> {
   const existing = await table.bulkGet(incoming.map((i) => i.id));
   const toPut: T[] = [];
   incoming.forEach((item, i) => {
@@ -59,6 +70,21 @@ async function mergeInto<T extends { id: string; updatedAt: number }>(
     toPut.push(item);
   });
   await table.bulkPut(toPut);
+  return toPut;
+}
+
+function videoInfo(video: { blob: Blob; mimeType: VideoMimeType; durationMs: number }): SignVideoInfo {
+  return { mimeType: video.mimeType, durationMs: Math.round(video.durationMs), bytes: video.blob.size };
+}
+
+function toVideoRow(signId: string, video: VideoDraft): SignVideo {
+  return { signId, blob: video.blob, mimeType: video.mimeType, durationMs: Math.round(video.durationMs) };
+}
+
+/** Applique la vidéo du brouillon à la fiche du signe (null = retirée). */
+function withVideo(sign: UserSign, video: VideoDraft | null | undefined): UserSign {
+  const { video: _previous, ...rest } = sign;
+  return video ? { ...rest, video: videoInfo(video) } : rest;
 }
 
 const STATIC_MOVEMENT = 'move_none';
@@ -110,6 +136,7 @@ function buildSign(draft: SignDraft, meta: Pick<UserSign, 'id' | 'createdAt' | '
 export type ImportMode = 'merge' | 'replace';
 
 export interface ImportReport {
+  videos: { added: number };
   handshapes: { added: number; updated: number; skipped: number };
   signs: { added: number; updated: number; skipped: number };
   notes: { added: number; updated: number; skipped: number };
@@ -132,20 +159,33 @@ export class StorageService {
 
   async createSign(draft: SignDraft): Promise<UserSign> {
     const now = Date.now();
-    const sign = buildSign(draft, { id: crypto.randomUUID(), createdAt: now, updatedAt: now });
-    await db.signs.add(sign);
+    const sign = withVideo(buildSign(draft, { id: crypto.randomUUID(), createdAt: now, updatedAt: now }), draft.video);
+    await db.transaction('rw', db.signs, db.videos, async () => {
+      await db.signs.add(sign);
+      if (draft.video) await db.videos.put(toVideoRow(sign.id, draft.video));
+    });
     if (sign.glyph) this.recognition.invalidate();
     return sign;
   }
 
-  /** Remplace le contenu du signe ; sans `draft.glyph`, le dessin est retiré. */
+  /** Remplace le contenu du signe ; sans `draft.glyph`, le dessin est retiré (vidéo : voir SignDraft). */
   async updateSign(id: string, draft: SignDraft): Promise<UserSign> {
     const existing = await db.signs.get(id);
     if (!existing) throw new Error('Ce signe n\'existe plus');
-    const sign = buildSign(draft, { id, createdAt: existing.createdAt, updatedAt: Date.now() });
-    await db.signs.put(sign);
+    const built = buildSign(draft, { id, createdAt: existing.createdAt, updatedAt: Date.now() });
+    const sign =
+      draft.video === undefined ? (existing.video ? { ...built, video: existing.video } : built) : withVideo(built, draft.video);
+    await db.transaction('rw', db.signs, db.videos, async () => {
+      await db.signs.put(sign);
+      if (draft.video === null) await db.videos.delete(id);
+      else if (draft.video) await db.videos.put(toVideoRow(id, draft.video));
+    });
     this.recognition.invalidate();
     return sign;
+  }
+
+  getVideo(signId: string): Promise<SignVideo | undefined> {
+    return db.videos.get(signId);
   }
 
   /** Tous les signes, par ordre alphabétique. */
@@ -216,18 +256,37 @@ export class StorageService {
 
   // --- Sauvegarde
 
-  async exportBackup(): Promise<Backup> {
-    const [handshapes, signs, notes] = await db.transaction('r', db.customHandshapes, db.signs, db.notes, () =>
-      Promise.all([db.customHandshapes.toArray(), db.signs.toArray(), db.notes.toArray()]),
+  /** Sauvegarde complète ; `includeVideos: false` allège le fichier (les vidéos restent sur l'appareil). */
+  async exportBackup(includeVideos = true): Promise<Backup> {
+    const [handshapes, signs, notes, videoRows] = await db.transaction(
+      'r',
+      [db.customHandshapes, db.signs, db.notes, db.videos],
+      () =>
+        Promise.all([
+          db.customHandshapes.toArray(),
+          db.signs.toArray(),
+          db.notes.toArray(),
+          includeVideos ? db.videos.toArray() : Promise.resolve([] as SignVideo[]),
+        ]),
     );
     const customHandshapes = await Promise.all(
       handshapes.map(async ({ image, ...rest }) => ({ ...rest, image: await blobToDataUrl(image) })),
+    );
+    const videos = await Promise.all(
+      videoRows.map(async (v) => ({
+        signId: v.signId,
+        mimeType: v.mimeType,
+        durationMs: v.durationMs,
+        // Type sans paramètres (codecs) : la data URL reste au format attendu à l'import.
+        data: await blobToDataUrl(new Blob([v.blob], { type: v.mimeType })),
+      })),
     );
     return {
       format: BACKUP_FORMAT,
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       customHandshapes,
+      videos,
       signs,
       notes,
     };
@@ -236,31 +295,59 @@ export class StorageService {
   /**
    * Importe une sauvegarde DÉJÀ validée par parseBackup().
    * - merge : ajoute les nouveautés ; un élément existant n'est remplacé que si l'import est plus récent.
-   * - replace : efface configurations personnelles, signes et notes, puis importe tout.
+   * - replace : efface configurations personnelles, signes, vidéos et notes, puis importe tout.
+   * Une vidéo locale n'est jamais perdue à cause d'un fichier exporté sans les vidéos (fusion).
    * Tout se fait dans une transaction : en cas d'erreur, rien n'est modifié.
    */
   async importBackup(backup: Backup, mode: ImportMode): Promise<ImportReport> {
     const empty = () => ({ added: 0, updated: 0, skipped: 0 });
-    const report: ImportReport = { handshapes: empty(), signs: empty(), notes: empty() };
-    // Conversion hors transaction (IndexedDB ne tolère pas d'attente sur autre chose qu'elle-même).
+    const report: ImportReport = { videos: { added: 0 }, handshapes: empty(), signs: empty(), notes: empty() };
+    // Conversions hors transaction (IndexedDB ne tolère pas d'attente sur autre chose qu'elle-même).
     const handshapes: CustomHandshape[] = backup.customHandshapes.map(({ image, ...rest }) => ({
       ...rest,
       image: dataUrlToBlob(image),
     }));
-    await db.transaction('rw', db.customHandshapes, db.signs, db.notes, async () => {
+    const fileVideos = new Map(
+      backup.videos.map((v) => [
+        v.signId,
+        { signId: v.signId, blob: dataUrlToBlob(v.data), mimeType: v.mimeType, durationMs: v.durationMs } as SignVideo,
+      ]),
+    );
+    await db.transaction('rw', [db.customHandshapes, db.signs, db.notes, db.videos], async () => {
+      const localVideos = new Set(mode === 'merge' ? await db.videos.toCollection().primaryKeys() : []);
+      const local = new Map(
+        mode === 'merge'
+          ? (await db.signs.bulkGet(backup.signs.map((s) => s.id))).filter((s): s is UserSign => !!s).map((s) => [s.id, s])
+          : [],
+      );
+      // Fiche vidéo cohérente avec ce qui sera réellement stocké.
+      const signs = backup.signs.map((sign) => {
+        const { video: _declared, ...rest } = sign;
+        const fromFile = fileVideos.get(sign.id);
+        if (fromFile) return { ...rest, video: videoInfo(fromFile) };
+        const kept = localVideos.has(sign.id) ? local.get(sign.id)?.video : undefined;
+        return kept ? { ...rest, video: kept } : rest;
+      });
+
       if (mode === 'replace') {
-        await Promise.all([db.customHandshapes.clear(), db.signs.clear(), db.notes.clear()]);
+        await Promise.all([db.customHandshapes.clear(), db.signs.clear(), db.notes.clear(), db.videos.clear()]);
         await db.customHandshapes.bulkAdd(handshapes);
-        await db.signs.bulkAdd(backup.signs);
+        await db.signs.bulkAdd(signs);
         await db.notes.bulkAdd(backup.notes);
+        await db.videos.bulkAdd([...fileVideos.values()]);
         report.handshapes.added = handshapes.length;
-        report.signs.added = backup.signs.length;
+        report.signs.added = signs.length;
         report.notes.added = backup.notes.length;
+        report.videos.added = fileVideos.size;
         return;
       }
       await mergeInto(db.customHandshapes, handshapes, report.handshapes);
-      await mergeInto(db.signs, backup.signs, report.signs);
+      const written = await mergeInto(db.signs, signs, report.signs);
       await mergeInto(db.notes, backup.notes, report.notes);
+      // Vidéos : seulement pour les signes effectivement ajoutés ou mis à jour.
+      const videos = written.map((s) => fileVideos.get(s.id)).filter((v): v is SignVideo => !!v);
+      await db.videos.bulkPut(videos);
+      report.videos.added = videos.length;
     });
     this.recognition.invalidate();
     await this.catalog.reloadCustomHandshapes();
@@ -268,7 +355,7 @@ export class StorageService {
   }
 
   async deleteSign(id: string): Promise<void> {
-    await db.signs.delete(id);
+    await db.transaction('rw', db.signs, db.videos, () => Promise.all([db.signs.delete(id), db.videos.delete(id)]));
     this.recognition.invalidate();
   }
 }

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseBackup } from './backup.schema';
+import { BACKUP_VERSION, parseBackup } from './backup.schema';
 import { catalogSchema } from './catalog.schema';
 import { extractGesture } from '../utils/gesture';
 import { SHAPES } from '../../../testing/shapes';
@@ -68,7 +68,7 @@ describe('parseBackup', () => {
     }
   });
 
-  it('convertit les sauvegardes v1/v2 (une configuration et un mouvement par main) au format v3', () => {
+  it('convertit les sauvegardes v1/v2 (une configuration et un mouvement par main) au format actuel', () => {
     const legacySign = {
       id: randomUUID(),
       word: 'Ancien',
@@ -91,7 +91,7 @@ describe('parseBackup', () => {
       );
       expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
       if (r.ok) {
-        expect(r.backup.version).toBe(3);
+        expect(r.backup.version).toBe(BACKUP_VERSION);
         expect(r.backup.customHandshapes).toEqual([]);
         expect(r.backup.signs[0].anatomy.dominant).toEqual({
           handshapeIds: ['hand_a'],
@@ -123,6 +123,21 @@ describe('parseBackup', () => {
     expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
   });
 
+  it('accepte la vidéo d\'un signe (MP4 ou WebM)', () => {
+    const r = parse((b) => {
+      b.version = 4;
+      b.signs[1].video = { mimeType: 'video/mp4', durationMs: 3200, bytes: 12 };
+      b.videos = [{ signId: b.signs[1].id, mimeType: 'video/mp4', durationMs: 3200, data: 'data:video/mp4;base64,AAAAIGZ0eXBpc29t' }];
+    });
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+    if (r.ok) expect(r.backup.videos).toHaveLength(1);
+  });
+
+  it('accepte une sauvegarde v3 (sans vidéos)', () => {
+    const r = parse((b) => void (b.version = 3));
+    expect(r.ok && r.backup.videos.length === 0).toBe(true);
+  });
+
   it('accepte les glyphes enregistrés avant le passage à 48 points (32 points)', () => {
     expect(parse((b) => void (b.signs[1].glyph.normalizedGesturePoints = b.signs[1].glyph.normalizedGesturePoints.slice(0, 32))).ok).toBe(true);
   });
@@ -145,7 +160,7 @@ describe('parseBackup', () => {
   it.each<[string, (b: any) => void | string, RegExp?]>([
     ['JSON invalide', () => '{oops', /JSON valide/],
     ['autre format', (b) => void (b.format = 'autre')],
-    ['version future', (b) => void (b.version = 4), /Version/],
+    ['version future', (b) => void (b.version = 5), /Version/],
     ['configuration inconnue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = ['hand_inventee']), /signs\[1\]\.anatomy\.dominant\.handshapeIds\[0\]/],
     ['config perso absente', (b) => void (b.customHandshapes = []), /Configuration personnelle absente/],
     ['suite de configurations vide', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = [])],
@@ -161,6 +176,12 @@ describe('parseBackup', () => {
     ['lien d\'une bulle vers elle-même', (b) => { const id = randomUUID(); b.notes[0].map = { nodes: [{ id, x: 0, y: 0, elements: [] }], links: [{ id: randomUUID(), from: id, to: id, arrow: false }] }; }],
     ['bulle hors de la surface', (b) => void (b.notes[0].map = { nodes: [{ id: randomUUID(), x: 99_999, y: 0, elements: [] }], links: [] })],
     ['disposition inconnue', (b) => void (b.notes[0].layout = 'grille')],
+    ['vidéo sans signe correspondant', (b) => void (b.videos = [{ signId: randomUUID(), mimeType: 'video/mp4', durationMs: 1000, data: 'data:video/mp4;base64,AAAA' }]), /Vidéo sans signe/],
+    ['vidéo au format non autorisé', (b) => void (b.videos = [{ signId: b.signs[0].id, mimeType: 'video/quicktime', durationMs: 1000, data: 'data:video/quicktime;base64,AAAA' }])],
+    ['vidéo déguisée (HTML)', (b) => void (b.videos = [{ signId: b.signs[0].id, mimeType: 'video/mp4', durationMs: 1000, data: 'data:text/html;base64,PHNjcmlwdD4=' }])],
+    ['vidéo trop lourde', (b) => void (b.videos = [{ signId: b.signs[0].id, mimeType: 'video/mp4', durationMs: 1000, data: 'data:video/mp4;base64,' + 'A'.repeat(4_300_000) }])],
+    ['deux vidéos pour un signe', (b) => void (b.videos = [0, 1].map(() => ({ signId: b.signs[0].id, mimeType: 'video/webm', durationMs: 1000, data: 'data:video/webm;base64,AAAA' }))), /même signe/],
+    ['fiche vidéo trop longue', (b) => void (b.signs[0].video = { mimeType: 'video/mp4', durationMs: 60_000, bytes: 10 })],
     ['couleur de trait piégée', (b) => void (b.signs[1].glyph.strokes[0].color = 'url(javascript:alert(1))')],
     ['balise dans un trait', (b) => void (b.signs[1].glyph.strokes[0].d = 'M0,0 Z"/><script>')],
     ['nombre de traits incohérent', (b) => void b.signs[1].glyph.strokes.push({ d: 'M0,0 Z' }), /Un tracé par trait/],

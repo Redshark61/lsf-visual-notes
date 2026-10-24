@@ -21,6 +21,10 @@
       dans un fichier JSON. Rangez-la en lieu sûr (cloud, clé USB) : c'est votre seule copie en dehors de ce
       navigateur.
     </p>
+    <label class="check">
+      <input type="checkbox" [checked]="includeVideos()" (change)="includeVideos.set($any($event.target).checked)" />
+      Inclure les vidéos des signes <small>(fichier plus lourd, ~150 Ko par vidéo)</small>
+    </label>
     <div class="row">
       <button type="button" class="primary" (click)="download()" [disabled]="busy()">Télécharger la sauvegarde</button>
       @if (canShare) {
@@ -58,6 +62,9 @@
             , {{ p.backup.customHandshapes.length }} configuration{{ p.backup.customHandshapes.length > 1 ? 's' : '' }}
             personnelle{{ p.backup.customHandshapes.length > 1 ? 's' : '' }}
           }
+          @if (p.backup.videos.length) {
+            , {{ p.backup.videos.length }} vidéo{{ p.backup.videos.length > 1 ? 's' : '' }}
+          }
           .
         </p>
         <fieldset>
@@ -84,6 +91,9 @@
       <div class="success" role="status">
         <p>Import terminé.</p>
         <ul>
+          @if (r.videos.added) {
+            <li>Vidéos : {{ r.videos.added }} importée(s)</li>
+          }
           @if (r.handshapes.added || r.handshapes.updated || r.handshapes.skipped) {
             <li>
               Configurations personnelles : {{ r.handshapes.added }} ajoutée(s), {{ r.handshapes.updated }} mise(s) à

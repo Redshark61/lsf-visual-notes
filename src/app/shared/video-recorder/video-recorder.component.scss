@@ -1,0 +1,92 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 480px;
+}
+
+.live {
+  position: relative;
+
+  video {
+    display: block;
+    width: 100%;
+    border-radius: 8px;
+    background: #000;
+    transform: scaleX(-1); // reflet : on se voit comme dans un miroir (la vidéo enregistrée ne l'est pas)
+  }
+}
+
+.overlay {
+  position: absolute;
+  color: #fff;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 70%);
+}
+
+.countdown {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 5rem;
+  font-weight: 700;
+}
+
+.rec {
+  top: 0.5rem;
+  left: 0.6rem;
+  font-weight: 600;
+
+  &::first-letter {
+    color: #ff4d4d;
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hint,
+.meta {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.error {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: #fbe4e4;
+  border-radius: 6px;
+}
+
+.file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.file:focus-within .button {
+  outline: 2px solid var(--color-primary);
+}
+
+button,
+.button {
+  display: inline-block;
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+
+  &.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+}

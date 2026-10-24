@@ -197,6 +197,25 @@
           }
         }
 
+        @case ('video') {
+          @if (currentVideo(); as video) {
+            @if (recordingAgain()) {
+              <app-video-recorder (recorded)="onVideoRecorded($event)" />
+              <button type="button" class="link" (click)="recordingAgain.set(false)">Garder la vidéo actuelle</button>
+            } @else {
+              <div class="video-current">
+                <app-blob-video [blob]="video" />
+              </div>
+              <div class="row">
+                <button type="button" (click)="recordingAgain.set(true)">Refaire la vidéo</button>
+                <button type="button" class="link danger" (click)="removeVideo()">Supprimer la vidéo</button>
+              </div>
+            }
+          } @else {
+            <app-video-recorder (recorded)="onVideoRecorded($event)" />
+          }
+        }
+
         @case ('note') {
           <label class="field">
             <span>Note personnelle</span>
@@ -266,6 +285,11 @@
                 Non précisé
               }
               <button type="button" class="link" (click)="goTo(4)">Modifier</button>
+            </dd>
+            <dt>Vidéo</dt>
+            <dd>
+              {{ hasVideo() ? 'Oui' : 'Aucune' }}
+              <button type="button" class="link" (click)="goTo(5)">Modifier</button>
             </dd>
           </dl>
         }

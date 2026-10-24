@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { NotePage, UserSign } from '../models/sign.model';
+import { NotePage, SignVideo, UserSign } from '../models/sign.model';
 import { UserSignV1, isSignV2, migrateSignV1, migrateSignV2 } from './migrations';
 
 export { migrateSignV1, migrateSignV2 } from './migrations';
@@ -9,6 +9,7 @@ export class AppDb extends Dexie {
   signs!: Table<UserSign, string>;
   notes!: Table<NotePage, string>;
   customHandshapes!: Table<CustomHandshape, string>;
+  videos!: Table<SignVideo, string>;
 
   constructor() {
     super('lsf-visual-notes');
@@ -43,6 +44,8 @@ export class AppDb extends Dexie {
             if (isSignV2(sign)) ref.value = migrateSignV2(sign);
           }),
       );
+    // v5 : vidéos des signes, à part (clé = id du signe).
+    this.version(5).stores({ videos: 'signId' });
   }
 }
 

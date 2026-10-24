@@ -58,6 +58,28 @@ export interface SignAnatomy {
   locationZoneIds: string[];
 }
 
+/** Formats vidéo acceptés (MP4/H.264 lisible partout, WebM en repli). */
+export const VIDEO_MIME_TYPES = ['video/mp4', 'video/webm'] as const;
+export type VideoMimeType = (typeof VIDEO_MIME_TYPES)[number];
+/** Taille maximale d'une vidéo de signe (une prise de 5 s en basse définition fait ~200 Ko). */
+export const MAX_VIDEO_BYTES = 3 * 1024 * 1024;
+export const MAX_VIDEO_DURATION_MS = 5_000;
+
+/** Fiche de la vidéo d'un signe (le fichier lui-même est dans la table `videos`). */
+export interface SignVideoInfo {
+  mimeType: VideoMimeType;
+  durationMs: number;
+  bytes: number;
+}
+
+/** Vidéo d'un signe (table IndexedDB séparée : ne pas charger les vidéos avec la liste des signes). */
+export interface SignVideo {
+  signId: string;
+  blob: Blob;
+  mimeType: VideoMimeType;
+  durationMs: number;
+}
+
 export interface UserSign {
   id: string; // UUID v4
   word: string;
@@ -65,6 +87,8 @@ export interface UserSign {
   anatomy: SignAnatomy;
   /** Absent pour une simple entrée de lexique : le signe est alors ignoré par la reconnaissance. */
   glyph?: SignGlyph;
+  /** Présente si une vidéo est enregistrée pour ce signe. */
+  video?: SignVideoInfo;
   note?: string;
   createdAt: number;
   updatedAt: number;

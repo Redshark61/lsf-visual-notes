@@ -14,6 +14,8 @@ import { PercentPipe } from '@angular/common';
 import { SmartCanvasComponent } from '../../shared/smart-canvas/smart-canvas.component';
 import { BodyMapComponent } from '../../shared/body-map/body-map.component';
 import { HandEditorComponent } from '../../shared/hand-editor/hand-editor.component';
+import { VideoRecorderComponent } from '../../shared/video-recorder/video-recorder.component';
+import { BlobVideoComponent } from '../../shared/blob-video.component';
 import { HandsPreviewComponent, isSymmetric } from '../../shared/hands-preview/hands-preview.component';
 import { describeHand, handshapeNames } from '../../shared/sign-detail/describe-hand';
 import { CatalogService } from '../../core/services/catalog.service';
@@ -24,6 +26,7 @@ import {
   MAX_WORD_LENGTH,
   SignDraft,
   StorageService,
+  VideoDraft,
   normalizeTags,
 } from '../../core/services/storage.service';
 import { HandSpec, SignGlyph, Stroke, UserSign } from '../../core/models/sign.model';
@@ -42,7 +45,7 @@ const SIMILARITY_DEBOUNCE_MS = 450;
 /** Au-delà, le Carnet remplacerait automatiquement le tracé par ce signe : risque de confusion. */
 const CONFUSION_SCORE = 0.8;
 
-type StepId = 'glyph' | 'word' | 'dominant' | 'nonDominant' | 'zones' | 'note';
+type StepId = 'glyph' | 'word' | 'dominant' | 'nonDominant' | 'zones' | 'video' | 'note';
 
 interface Step {
   id: StepId;
@@ -56,6 +59,7 @@ const STEPS: Step[] = [
   { id: 'dominant', title: 'Main dominante', optional: false },
   { id: 'nonDominant', title: 'Main dominée', optional: true },
   { id: 'zones', title: 'Emplacement', optional: true },
+  { id: 'video', title: 'Vidéo', optional: true },
   { id: 'note', title: 'Note', optional: true },
 ];
 
@@ -90,6 +94,8 @@ interface Similar {
     SmartCanvasComponent,
     BodyMapComponent,
     HandEditorComponent,
+    VideoRecorderComponent,
+    BlobVideoComponent,
     HandsPreviewComponent,
     GlyphPathsPipe,
     ColorPaletteComponent, PercentPipe, RouterLink],
@@ -121,6 +127,20 @@ export class SignBuilderComponent {
   protected readonly simplify = signal(readSimplifyPref());
   /** Dernier trait simplifié, pour proposer de garder le tracé d'origine. */
   protected readonly lastSimplified = signal<{ index: number; label: string } | null>(null);
+  /**
+   * Vidéo : undefined = inchangée (modification), null = supprimée, sinon nouvelle prise.
+   * `existingVideo` : vidéo déjà enregistrée du signe modifié.
+   */
+  protected readonly videoDraft = signal<VideoDraft | null | undefined>(undefined);
+  protected readonly existingVideo = signal<Blob | null>(null);
+  /** Vidéo à afficher : nouvelle prise, sinon vidéo existante si elle n'est pas supprimée. */
+  protected readonly currentVideo = computed<Blob | null>(() => {
+    const draft = this.videoDraft();
+    if (draft) return draft.blob;
+    return draft === null ? null : this.existingVideo();
+  });
+  protected readonly hasVideo = computed(() => !!this.currentVideo());
+  protected readonly recordingAgain = signal(false);
   /** Couleur du pinceau pour les prochains traits (null = noir). La reconnaissance l'ignore. */
   protected readonly brushColor = signal<string | null>(null);
   /** Couleur de chaque trait du glyphe courant (dessin en cours, ou dessin conservé en modification). */
@@ -175,6 +195,7 @@ export class SignBuilderComponent {
     dominant: isComplete(this.dominant()),
     nonDominant: this.nonDominant() === null || isComplete(this.nonDominant()!),
     zones: true,
+    video: true,
     note: true,
   }));
   protected readonly canAdvance = computed(() => this.valid()[this.step().id]);
@@ -208,6 +229,8 @@ export class SignBuilderComponent {
         return !this.glyph();
       case 'nonDominant':
         return this.nonDominant() === null;
+      case 'video':
+        return !this.hasVideo();
       case 'zones':
         return this.zoneIds().length === 0;
       default:
@@ -342,6 +365,7 @@ export class SignBuilderComponent {
     this.dominant.set(structuredClone(a.dominant));
     this.nonDominant.set(a.nonDominant ? structuredClone(a.nonDominant) : null);
     this.zoneIds.set([...a.locationZoneIds]);
+    if (sign.video) this.storage.getVideo(sign.id).then((v) => this.existingVideo.set(v?.blob ?? null));
     this.note.set(sign.note ?? '');
     this.tagsInput.set(sign.tags.join(', '));
     // Récapitulatif (chaque étape a un lien « Modifier »), ou directement le dessin.
@@ -409,13 +433,26 @@ export class SignBuilderComponent {
         glyph: this.glyphWithColor(),
         note: this.note(),
       } satisfies SignDraft;
-      const sign = editing ? await this.storage.updateSign(editing.id, draft) : await this.storage.createSign(draft);
+      const withVideo = { ...draft, video: this.videoDraft() };
+      const sign = editing
+        ? await this.storage.updateSign(editing.id, withVideo)
+        : await this.storage.createSign(withVideo);
       this.saved.set(sign);
     } catch (e) {
       this.error.set(`Échec de l'enregistrement : ${(e as Error).message}`);
     } finally {
       this.saving.set(false);
     }
+  }
+
+  protected onVideoRecorded(video: VideoDraft): void {
+    this.videoDraft.set(video);
+    this.recordingAgain.set(false);
+  }
+
+  protected removeVideo(): void {
+    this.videoDraft.set(null);
+    this.recordingAgain.set(false);
   }
 
   /** Glyphe à enregistrer, avec la couleur de chaque trait. */
@@ -464,6 +501,9 @@ export class SignBuilderComponent {
     this.nonDominant.set(null);
     this.mirroredFromDominant.set(false);
     this.zoneIds.set([]);
+    this.videoDraft.set(undefined);
+    this.existingVideo.set(null);
+    this.recordingAgain.set(false);
     this.note.set('');
     this.tagsInput.set('');
     this.saved.set(null);

@@ -62,6 +62,9 @@
                 <span class="glyph none" aria-hidden="true">sans dessin</span>
               }
               <span class="word">{{ s.word }}</span>
+              @if (s.video) {
+                <span class="badge">▶ vidéo</span>
+              }
               <span class="hands" aria-hidden="true">
                 @for (id of [s.anatomy.dominant.handshapeIds[0], s.anatomy.nonDominant?.handshapeIds?.[0]]; track $index) {
                   @if (id && handImage(id); as url) {

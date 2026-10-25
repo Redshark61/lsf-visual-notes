@@ -11,7 +11,7 @@ type Sort = 'alpha' | 'recent';
 
 /** Toutes les configurations d'un signe (suites des deux mains). */
 const handshapesOf = (s: UserSign) => [
-  ...s.anatomy.dominant.handshapeIds,
+  ...(s.anatomy.dominant?.handshapeIds ?? []),
   ...(s.anatomy.nonDominant?.handshapeIds ?? []),
 ];
 

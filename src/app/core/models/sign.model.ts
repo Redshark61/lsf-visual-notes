@@ -38,9 +38,9 @@ export const MAX_HANDSHAPE_SEQUENCE = 5;
 
 /** Paramètres manuels d'une main. */
 export interface HandSpec {
-  /** Suite de configurations, dans l'ordre (ex. index → main plate). Au moins une. */
+  /** Suite de configurations, dans l'ordre (ex. index → main plate). Vide = non précisée. */
   handshapeIds: string[];
-  /** Mouvements combinés (ex. rotation + contact + symétrique). Au moins un (« move_none » si statique). */
+  /** Mouvements combinés (ex. rotation + contact + symétrique). Vide = non précisé (« move_none » = statique). */
   movementIds: string[];
   /** Directions du mouvement (vide si non précisé ou statique). */
   directionIds: string[];
@@ -49,9 +49,10 @@ export interface HandSpec {
   orientationId?: string;
 }
 
-/** Seules la configuration et le mouvement de la main dominante sont obligatoires. */
+/** Tout est facultatif : seul le mot est obligatoire pour enregistrer un signe. */
 export interface SignAnatomy {
-  dominant: HandSpec;
+  /** Absent si rien n'est précisé pour la main dominante. */
+  dominant?: HandSpec;
   /** Absent pour un signe à une main. */
   nonDominant?: HandSpec;
   /** Zones dans l'ordre du trajet (ex. menton → torse). Peut être vide. */

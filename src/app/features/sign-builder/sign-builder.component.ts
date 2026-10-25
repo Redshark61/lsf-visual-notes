@@ -17,7 +17,9 @@ import { HandEditorComponent } from '../../shared/hand-editor/hand-editor.compon
 import { VideoRecorderComponent } from '../../shared/video-recorder/video-recorder.component';
 import { BlobVideoComponent } from '../../shared/blob-video.component';
 import { HandsPreviewComponent, isSymmetric } from '../../shared/hands-preview/hands-preview.component';
-import { describeHand, handshapeNames } from '../../shared/sign-detail/describe-hand';
+import { summarizeHand } from '../../shared/sign-detail/describe-hand';
+import { emptyHand, isEmptyHand } from '../../core/utils/hand-spec';
+import { WizardFooterComponent } from './wizard-footer.component';
 import { CatalogService } from '../../core/services/catalog.service';
 import { RecognitionService } from '../../core/services/recognition.service';
 import {
@@ -56,7 +58,7 @@ interface Step {
 const STEPS: Step[] = [
   { id: 'glyph', title: 'Dessin', optional: true },
   { id: 'word', title: 'Nom', optional: false },
-  { id: 'dominant', title: 'Main dominante', optional: false },
+  { id: 'dominant', title: 'Main dominante', optional: true },
   { id: 'nonDominant', title: 'Main dominée', optional: true },
   { id: 'zones', title: 'Emplacement', optional: true },
   { id: 'video', title: 'Vidéo', optional: true },
@@ -80,8 +82,6 @@ const SIMPLIFIED_LABELS: Record<Exclude<SimplifiedKind, 'free'>, string> = {
   arc: 'en arc de cercle',
 };
 
-const emptyHand = (): HandSpec => ({ handshapeIds: [], movementIds: [], directionIds: [] });
-const isComplete = (hand: HandSpec) => hand.handshapeIds.length > 0 && hand.movementIds.length > 0;
 
 interface Similar {
   word: string;
@@ -95,6 +95,7 @@ interface Similar {
     BodyMapComponent,
     HandEditorComponent,
     VideoRecorderComponent,
+    WizardFooterComponent,
     BlobVideoComponent,
     HandsPreviewComponent,
     GlyphPathsPipe,
@@ -141,6 +142,9 @@ export class SignBuilderComponent {
   });
   protected readonly hasVideo = computed(() => !!this.currentVideo());
   protected readonly recordingAgain = signal(false);
+  /** Prise filmée, pas encore validée (bouton vert « Utiliser cette vidéo » du pied de page). */
+  protected readonly pendingVideo = signal<VideoDraft | null>(null);
+  private readonly recorder = viewChild(VideoRecorderComponent);
   /** Couleur du pinceau pour les prochains traits (null = noir). La reconnaissance l'ignore. */
   protected readonly brushColor = signal<string | null>(null);
   /** Couleur de chaque trait du glyphe courant (dessin en cours, ou dessin conservé en modification). */
@@ -179,44 +183,30 @@ export class SignBuilderComponent {
 
   protected readonly tags = computed(() => normalizeTags(this.tagsInput().split(',')));
   /** Récapitulatif : « Index → Main plate · Arc + Contact, vers le haut, répété · Paume vers soi ». */
-  protected readonly dominantSummary = computed(
-    () => `${handshapeNames(this.catalog, this.dominant())} · ${describeHand(this.catalog, this.dominant())}`,
-  );
+  protected readonly dominantSummary = computed(() => summarizeHand(this.catalog, this.dominant()));
   protected readonly nonDominantSummary = computed(() => {
     const hand = this.nonDominant();
-    return hand ? `${handshapeNames(this.catalog, hand)} · ${describeHand(this.catalog, hand)}` : 'Aucune';
+    return hand && !isEmptyHand(hand) ? summarizeHand(this.catalog, hand) : 'Aucune';
   });
   protected readonly confusable = computed(() => this.similar().filter((s) => s.score >= CONFUSION_SCORE));
 
-  /** Une étape est valide quand on peut la quitter vers l'avant. */
+  /** Une étape est valide quand on peut la quitter vers l'avant : seul le nom est obligatoire. */
   private readonly valid = computed<Record<StepId, boolean>>(() => ({
     glyph: true,
     word: this.word().trim().length > 0,
-    dominant: isComplete(this.dominant()),
-    nonDominant: this.nonDominant() === null || isComplete(this.nonDominant()!),
+    dominant: true,
+    nonDominant: true,
     zones: true,
     video: true,
     note: true,
   }));
   protected readonly canAdvance = computed(() => this.valid()[this.step().id]);
+  /** Enregistrement possible à n'importe quelle étape dès que le nom est saisi. */
+  protected readonly canSave = computed(() => this.word().trim().length > 0);
   /** Ce qui empêche de passer à l'étape suivante, affiché à côté du bouton grisé. */
-  protected readonly blocker = computed(() => {
-    switch (this.step().id) {
-      case 'word':
-        return this.word().trim() ? null : 'Indiquez le nom du signe.';
-      case 'dominant':
-        if (!this.dominant().handshapeIds.length) return 'Choisissez une configuration.';
-        return this.dominant().movementIds.length ? null : 'Choisissez aussi au moins un mouvement.';
-      case 'nonDominant': {
-        const hand = this.nonDominant();
-        if (!hand || isComplete(hand)) return null;
-        if (!hand.handshapeIds.length) return 'Choisissez la configuration de la main dominée, ou « Signe à une main ».';
-        return 'Choisissez aussi au moins un mouvement pour la main dominée.';
-      }
-      default:
-        return null;
-    }
-  });
+  protected readonly blocker = computed(() =>
+    this.step().id === 'word' && !this.word().trim() ? 'Indiquez le nom du signe (seul champ obligatoire).' : null,
+  );
   /** Une étape est accessible depuis le fil d'Ariane si toutes les précédentes sont valides. */
   protected readonly reachable = computed(() => {
     const v = this.valid();
@@ -227,12 +217,14 @@ export class SignBuilderComponent {
     switch (this.step().id) {
       case 'glyph':
         return !this.glyph();
+      case 'dominant':
+        return isEmptyHand(this.dominant());
       case 'nonDominant':
-        return this.nonDominant() === null;
-      case 'video':
-        return !this.hasVideo();
+        return isEmptyHand(this.nonDominant());
       case 'zones':
         return this.zoneIds().length === 0;
+      case 'video':
+        return !this.hasVideo();
       default:
         return false;
     }
@@ -277,6 +269,7 @@ export class SignBuilderComponent {
   protected goTo(index: number): void {
     if (index < 0 || index >= STEPS.length || !this.reachable()[index]) return;
     if (STEPS[index].id === 'nonDominant') this.prefillSymmetricHand();
+    this.pendingVideo.set(null); // une prise non validée est abandonnée en quittant l'étape
     this.stepIndex.set(index);
     this.error.set(null);
     // Accessibilité : on annonce la nouvelle étape en y plaçant le focus.
@@ -362,7 +355,7 @@ export class SignBuilderComponent {
     this.glyph.set(sign.glyph ?? null);
     this.strokeColors.set(sign.glyph ? glyphPaths(sign.glyph).map((p) => p.color) : []);
     this.word.set(sign.word);
-    this.dominant.set(structuredClone(a.dominant));
+    this.dominant.set(a.dominant ? structuredClone(a.dominant) : emptyHand());
     this.nonDominant.set(a.nonDominant ? structuredClone(a.nonDominant) : null);
     this.zoneIds.set([...a.locationZoneIds]);
     if (sign.video) this.storage.getVideo(sign.id).then((v) => this.existingVideo.set(v?.blob ?? null));
@@ -415,7 +408,7 @@ export class SignBuilderComponent {
   // --- Enregistrement
 
   protected async save(): Promise<void> {
-    if (this.saving() || !this.reachable()[STEPS.length - 1]) return;
+    if (this.saving() || !this.canSave()) return;
 
     this.saving.set(true);
     this.error.set(null);
@@ -445,9 +438,21 @@ export class SignBuilderComponent {
     }
   }
 
-  protected onVideoRecorded(video: VideoDraft): void {
-    this.videoDraft.set(video);
+  protected onVideoPending(video: VideoDraft | null): void {
+    this.pendingVideo.set(video);
+  }
+
+  /** Valide la prise et passe à l'étape suivante (même emplacement que « Passer »). */
+  protected useVideo(): void {
+    const pending = this.pendingVideo();
+    if (!pending) return;
+    this.videoDraft.set(pending);
     this.recordingAgain.set(false);
+    this.goTo(this.stepIndex() + 1);
+  }
+
+  protected retakeVideo(): void {
+    this.recorder()?.retake();
   }
 
   protected removeVideo(): void {
@@ -502,6 +507,7 @@ export class SignBuilderComponent {
     this.mirroredFromDominant.set(false);
     this.zoneIds.set([]);
     this.videoDraft.set(undefined);
+    this.pendingVideo.set(null);
     this.existingVideo.set(null);
     this.recordingAgain.set(false);
     this.note.set('');

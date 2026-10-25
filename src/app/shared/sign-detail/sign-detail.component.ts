@@ -8,6 +8,7 @@ import { UserSign } from '../../core/models/sign.model';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
 import { describeHand } from './describe-hand';
 import { isSymmetric } from '../hands-preview/hands-preview.component';
+import { isEmptyHand } from '../../core/utils/hand-spec';
 
 /** Fiche complète d'un signe (Carnet, et plus tard liste du dictionnaire). */
 @Component({
@@ -31,13 +32,19 @@ export class SignDetailComponent {
     const symmetric = isSymmetric(a.dominant, a.nonDominant);
     return [
       { label: 'Main dominante', hand: a.dominant, mirrored: false },
-      ...(a.nonDominant ? [{ label: 'Main dominée', hand: a.nonDominant, mirrored: symmetric }] : []),
-    ].map(({ label, hand, mirrored }) => ({
-      label,
-      mirrored,
-      steps: hand.handshapeIds.map((id) => ({ id, name: this.catalog.find(id)?.name ?? id, imageUrl: this.catalog.find(id)?.imageUrl })),
-      description: describeHand(this.catalog, hand),
-    }));
+      { label: 'Main dominée', hand: a.nonDominant, mirrored: symmetric },
+    ]
+      .filter((h) => !isEmptyHand(h.hand))
+      .map(({ label, hand, mirrored }) => ({
+        label,
+        mirrored,
+        steps: hand!.handshapeIds.map((id) => ({
+          id,
+          name: this.catalog.find(id)?.name ?? id,
+          imageUrl: this.catalog.find(id)?.imageUrl,
+        })),
+        description: describeHand(this.catalog, hand),
+      }));
   });
   protected readonly zones = computed(() =>
     this.sign().anatomy.locationZoneIds.map((id) => this.catalog.find(id)?.name ?? id),

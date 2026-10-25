@@ -3,10 +3,9 @@
     @if (result(); as r) {
       <app-blob-video [blob]="r.blob" label="Vidéo enregistrée" />
       <p class="meta">{{ r.durationMs / 1000 | number: '1.1-1' }} s · {{ r.blob.size / 1024 | number: '1.0-0' }} Ko</p>
-      <div class="actions">
-        <button type="button" (click)="startCamera()">Refaire</button>
-        <button type="button" class="primary" (click)="use()">Utiliser cette vidéo</button>
-      </div>
+      <p class="validate" role="status">
+        Vérifiez la vidéo, puis touchez <strong>« Utiliser cette vidéo »</strong> en bas de l'écran.
+      </p>
     }
   }
   @case ('error') {
@@ -47,7 +46,7 @@
           <span class="hint">Ouverture de la caméra…</span>
         }
         @case ('preview') {
-          <button type="button" class="primary" (click)="record()">Enregistrer ({{ maxSeconds }} s max)</button>
+          <button type="button" class="primary" (click)="record()">Commencer à filmer ({{ maxSeconds }} s max)</button>
         }
         @case ('recording') {
           <button type="button" class="primary" (click)="stop()">Arrêter</button>

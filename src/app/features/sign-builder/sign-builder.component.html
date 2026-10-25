@@ -200,7 +200,7 @@
         @case ('video') {
           @if (currentVideo(); as video) {
             @if (recordingAgain()) {
-              <app-video-recorder (recorded)="onVideoRecorded($event)" />
+              <app-video-recorder (pending)="onVideoPending($event)" />
               <button type="button" class="link" (click)="recordingAgain.set(false)">Garder la vidéo actuelle</button>
             } @else {
               <div class="video-current">
@@ -212,7 +212,7 @@
               </div>
             }
           } @else {
-            <app-video-recorder (recorded)="onVideoRecorded($event)" />
+            <app-video-recorder (pending)="onVideoPending($event)" />
           }
         }
 
@@ -300,30 +300,20 @@
       }
     </div>
 
-    <footer class="nav">
-      <button type="button" (click)="previous()" [disabled]="stepIndex() === 0">Précédent</button>
-      @if (isLast()) {
-        <button type="button" class="primary" (click)="save()" [disabled]="saving()">
-          {{ saving() ? 'Enregistrement…' : 'Enregistrer le signe' }}
-        </button>
-      } @else {
-        @if (blocker(); as b) {
-          <span class="blocker" role="status">{{ b }}</span>
-        }
-        @if (editing() && reachable()[steps.length - 1]) {
-          <!-- Modification : inutile de parcourir toutes les étapes pour enregistrer. -->
-          <span class="nav-end">
-            <button type="button" (click)="next()" [disabled]="!canAdvance()">Suivant</button>
-            <button type="button" class="primary" (click)="save()" [disabled]="saving()">
-              {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
-            </button>
-          </span>
-        } @else {
-          <button type="button" class="primary" (click)="next()" [disabled]="!canAdvance()">
-            {{ step().optional && stepIsEmpty() ? 'Passer cette étape' : 'Suivant' }}
-          </button>
-        }
-      }
-    </footer>
+    <app-wizard-footer
+      [canGoBack]="stepIndex() > 0"
+      [isLast]="isLast()"
+      [canAdvance]="canAdvance()"
+      [blocker]="blocker()"
+      [skipping]="step().optional && stepIsEmpty()"
+      [canSave]="canSave()"
+      [saving]="saving()"
+      [pendingVideo]="step().id === 'video' && !!pendingVideo()"
+      (previous)="previous()"
+      (next)="next()"
+      (save)="save()"
+      (useVideo)="useVideo()"
+      (retake)="retakeVideo()"
+    />
   }
 </section>

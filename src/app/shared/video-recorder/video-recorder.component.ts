@@ -51,7 +51,8 @@ function pickMime(): [string, VideoMimeType] | null {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class VideoRecorderComponent {
-  readonly recorded = output<VideoDraft>();
+  /** Prise en attente de validation (null : plus de prise). La validation se fait dans le pied de l'assistant. */
+  readonly pending = output<VideoDraft | null>();
 
   private readonly injector = inject(Injector);
   private readonly live = viewChild<ElementRef<HTMLVideoElement>>('live');
@@ -72,9 +73,14 @@ export class VideoRecorderComponent {
     inject(DestroyRef).onDestroy(() => this.cleanup());
   }
 
+  /** Recommence une prise. */
+  retake(): void {
+    void this.startCamera();
+  }
+
   protected async startCamera(): Promise<void> {
     this.error.set(null);
-    this.result.set(null);
+    this.setResult(null);
     this.phase.set('starting');
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ video: CAPTURE, audio: false });
@@ -121,7 +127,7 @@ export class VideoRecorderComponent {
       const blob = new Blob(chunks, { type: baseType });
       this.stopCamera();
       if (blob.size > MAX_VIDEO_BYTES) return this.fail('Vidéo trop lourde, recommencez.');
-      this.result.set({ blob, mimeType: baseType, durationMs });
+      this.setResult({ blob, mimeType: baseType, durationMs });
       this.phase.set('review');
     };
     recorder.start(250);
@@ -140,9 +146,9 @@ export class VideoRecorderComponent {
     if (this.recorder?.state === 'recording') this.recorder.stop();
   }
 
-  protected use(): void {
-    const result = this.result();
-    if (result) this.recorded.emit(result);
+  private setResult(result: VideoDraft | null): void {
+    this.result.set(result);
+    this.pending.emit(result);
   }
 
   /** Secours sans MediaRecorder : fichier MP4/WebM léger choisi ou filmé avec l'appareil. */
@@ -159,7 +165,7 @@ export class VideoRecorderComponent {
     probe.onloadedmetadata = () => {
       URL.revokeObjectURL(url);
       const blob = new Blob([file], { type });
-      this.result.set({ blob, mimeType: type, durationMs: Math.min(probe.duration * 1000 || 0, MAX_VIDEO_DURATION_MS * 2) });
+      this.setResult({ blob, mimeType: type, durationMs: Math.min(probe.duration * 1000 || 0, MAX_VIDEO_DURATION_MS * 2) });
       this.phase.set('review');
     };
     probe.onerror = () => {

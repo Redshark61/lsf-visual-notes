@@ -16,6 +16,7 @@ export function isSymmetric(...hands: (HandSpec | null | undefined)[]): boolean 
 @Component({
   selector: 'app-hands-preview',
   template: `
+    @if (hands().length) {
     <div class="preview" [class.symmetric]="symmetric()">
       @for (h of hands(); track h.label) {
         <figure [class.mirrored]="h.mirrored">
@@ -34,7 +35,8 @@ export function isSymmetric(...hands: (HandSpec | null | undefined)[]): boolean 
         </figure>
       }
     </div>
-    @if (symmetric()) {
+    }
+    @if (hands().length && symmetric()) {
       <p class="hint">Symétrie : la main dominée est affichée en miroir.</p>
     }
   `,
@@ -98,7 +100,7 @@ export function isSymmetric(...hands: (HandSpec | null | undefined)[]): boolean 
 })
 export class HandsPreviewComponent {
   private readonly catalog = inject(CatalogService);
-  readonly dominant = input.required<HandSpec>();
+  readonly dominant = input<HandSpec | null | undefined>(null);
   readonly nonDominant = input<HandSpec | null | undefined>(null);
 
   protected readonly symmetric = computed(() => isSymmetric(this.dominant(), this.nonDominant()));
@@ -106,7 +108,9 @@ export class HandsPreviewComponent {
     const step = (id: string) => ({ name: this.catalog.find(id)?.name ?? id, imageUrl: this.catalog.find(id)?.imageUrl });
     const nonDominant = this.nonDominant();
     return [
-      { label: 'Main dominante', steps: this.dominant().handshapeIds.map(step), mirrored: false },
+      ...(this.dominant()?.handshapeIds.length
+        ? [{ label: 'Main dominante', steps: this.dominant()!.handshapeIds.map(step), mirrored: false }]
+        : []),
       ...(nonDominant?.handshapeIds.length
         ? [{ label: 'Main dominée', steps: nonDominant.handshapeIds.map(step), mirrored: this.symmetric() }]
         : []),

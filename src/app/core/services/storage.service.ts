@@ -4,10 +4,9 @@ import { db } from '../db/app.db';
 import { BACKUP_FORMAT, BACKUP_VERSION, Backup } from '../models/backup.model';
 import { CustomHandshape } from '../models/catalog.model';
 import { blobToDataUrl, dataUrlToBlob } from '../utils/image';
+import { normalizeHand } from '../utils/hand-spec';
 import { CatalogService } from './catalog.service';
 import {
-  HandSpec,
-  MAX_HANDSHAPE_SEQUENCE,
   NoteElement,
   NotePage,
   SignVideo,
@@ -87,34 +86,11 @@ function withVideo(sign: UserSign, video: VideoDraft | null | undefined): UserSi
   return video ? { ...rest, video: videoInfo(video) } : rest;
 }
 
-const STATIC_MOVEMENT = 'move_none';
-
-/**
- * HandSpec propre : sans doublons, au moins une configuration et un mouvement ;
- * « statique » exclu s'il est combiné à de vrais mouvements ; direction et répétition
- * seulement s'il y a un mouvement. Renvoie null si la configuration manque.
- */
-export function normalizeHand(hand: HandSpec | null | undefined): HandSpec | null {
-  const handshapeIds = [...new Set(hand?.handshapeIds ?? [])].filter(Boolean).slice(0, MAX_HANDSHAPE_SEQUENCE);
-  if (!hand || handshapeIds.length === 0) return null;
-  let movementIds = [...new Set(hand.movementIds)].filter(Boolean);
-  if (movementIds.length > 1) movementIds = movementIds.filter((m) => m !== STATIC_MOVEMENT);
-  if (movementIds.length === 0) movementIds = [STATIC_MOVEMENT];
-  const moving = movementIds[0] !== STATIC_MOVEMENT;
-  return {
-    handshapeIds,
-    movementIds,
-    directionIds: moving ? [...new Set(hand.directionIds)].filter(Boolean) : [],
-    ...(moving && hand.repeated ? { repeated: true } : {}),
-    ...(hand.orientationId ? { orientationId: hand.orientationId } : {}),
-  };
-}
-
 function buildSign(draft: SignDraft, meta: Pick<UserSign, 'id' | 'createdAt' | 'updatedAt'>): UserSign {
   const word = draft.word.trim().slice(0, MAX_WORD_LENGTH);
   if (!word) throw new Error('Le mot est obligatoire');
+  // Seul le mot est obligatoire : une main sans aucune information n'est pas enregistrée.
   const dominant = normalizeHand(draft.anatomy.dominant);
-  if (!dominant || !draft.anatomy.dominant.movementIds.length) throw new Error('La main dominante est obligatoire');
   const nonDominant = normalizeHand(draft.anatomy.nonDominant);
   const note = draft.note?.trim().slice(0, MAX_NOTE_LENGTH);
   return {
@@ -122,7 +98,7 @@ function buildSign(draft: SignDraft, meta: Pick<UserSign, 'id' | 'createdAt' | '
     word,
     tags: normalizeTags(draft.tags),
     anatomy: {
-      dominant,
+      ...(dominant ? { dominant } : {}),
       ...(nonDominant ? { nonDominant } : {}),
       locationZoneIds: [...new Set(draft.anatomy.locationZoneIds)],
     },

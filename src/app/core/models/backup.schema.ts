@@ -67,8 +67,8 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
   const videoDuration = z.int().check(z.gte(0), z.lte(MAX_VIDEO_DURATION_MS * 2));
 
   const handSpec = z.strictObject({
-    handshapeIds: z.array(hand).check(z.minLength(1), z.maxLength(MAX_HANDSHAPE_SEQUENCE)),
-    movementIds: z.array(known(movements, 'Mouvement')).check(z.minLength(1), z.maxLength(movements.size)),
+    handshapeIds: z.array(hand).check(z.maxLength(MAX_HANDSHAPE_SEQUENCE)),
+    movementIds: z.array(known(movements, 'Mouvement')).check(z.maxLength(movements.size)),
     directionIds: z.array(known(directions, 'Direction')).check(z.maxLength(directions.size)),
     repeated: z.optional(z.boolean()),
     orientationId: z.optional(known(orientations, 'Orientation')),
@@ -107,7 +107,7 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
     word: text(1, 80),
     tags: z.array(text(1, 30)).check(z.maxLength(10)),
     anatomy: z.strictObject({
-      dominant: handSpec,
+      dominant: z.optional(handSpec),
       nonDominant: z.optional(handSpec),
       locationZoneIds: z.array(known(zones, 'Emplacement')).check(z.maxLength(zones.size)),
     }),

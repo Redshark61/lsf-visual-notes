@@ -142,6 +142,17 @@ describe('parseBackup', () => {
     expect(parse((b) => void (b.signs[1].glyph.normalizedGesturePoints = b.signs[1].glyph.normalizedGesturePoints.slice(0, 32))).ok).toBe(true);
   });
 
+  it('accepte un signe réduit au mot (seul champ obligatoire) : aucune main', () => {
+    const r = parse((b) => void (b.signs[1].anatomy = { locationZoneIds: [] }));
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+  });
+
+  it('accepte une main partiellement renseignée (configuration sans mouvement, ou mouvement seul)', () => {
+    expect(parse((b) => void (b.signs[1].anatomy.dominant = { handshapeIds: ['hand_a'], movementIds: [], directionIds: [] })).ok).toBe(true);
+    expect(parse((b) => void (b.signs[1].anatomy.dominant = { handshapeIds: [], movementIds: ['move_arc'], directionIds: [] })).ok).toBe(true);
+    expect(parse((b) => void (b.signs[1].anatomy.nonDominant = { handshapeIds: [], movementIds: [], directionIds: [], orientationId: 'orient_palm_up' })).ok).toBe(true);
+  });
+
   it("accepte la couleur d'affichage d'un glyphe (globale ou par trait)", () => {
     expect(parse((b) => void (b.signs[1].glyph.color = '#e0a100')).ok).toBe(true);
     expect(parse((b) => void (b.signs[1].glyph.strokes[0].color = '#c62828')).ok).toBe(true);
@@ -163,9 +174,7 @@ describe('parseBackup', () => {
     ['version future', (b) => void (b.version = 5), /Version/],
     ['configuration inconnue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = ['hand_inventee']), /signs\[1\]\.anatomy\.dominant\.handshapeIds\[0\]/],
     ['config perso absente', (b) => void (b.customHandshapes = []), /Configuration personnelle absente/],
-    ['suite de configurations vide', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = [])],
     ['suite de configurations trop longue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = Array(6).fill('hand_a'))],
-    ['aucun mouvement', (b) => void (b.signs[1].anatomy.dominant.movementIds = [])],
     ['direction inconnue', (b) => void b.signs[1].anatomy.dominant.directionIds.push('dir_x'), /Direction/],
     ['ancien format dans une v3', (b) => void (b.signs[1].anatomy = { dominantHandId: 'hand_a', dominantMovementId: 'move_arc', locationZoneIds: [] })],
     ['zone inconnue', (b) => void b.signs[0].anatomy.locationZoneIds.push('zone_x'), /locationZoneIds\[2\]/],

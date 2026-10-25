@@ -1,0 +1,62 @@
+<div class="field">
+  <label for="tag-field">Tags <small>({{ tags().length }}/{{ maxTags }})</small></label>
+
+  @if (tags().length) {
+    <ul class="selected" aria-label="Tags choisis">
+      @for (t of tags(); track t) {
+        <li>
+          <span>{{ t }}</span>
+          <button type="button" [attr.aria-label]="'Retirer le tag ' + t" (click)="remove(t)">×</button>
+        </li>
+      }
+    </ul>
+  }
+
+  <div class="entry">
+    <input
+      id="tag-field"
+      type="text"
+      autocomplete="off"
+      enterkeyhint="done"
+      [maxLength]="maxLength"
+      [disabled]="full()"
+      [placeholder]="full() ? 'Maximum atteint' : 'Rechercher ou créer un tag…'"
+      [value]="query()"
+      (input)="onInput($any($event.target).value)"
+      (keydown)="onKey($event)"
+    />
+    <button type="button" class="add" [disabled]="!query().trim() || full()" (click)="add(query())">
+      {{ isNew() ? 'Créer' : 'Ajouter' }}
+    </button>
+  </div>
+
+  @if (suggestions().length) {
+    <ul class="suggestions" aria-label="Suggestions">
+      @for (s of suggestions(); track s.tag) {
+        <li>
+          <button type="button" [disabled]="full()" (click)="add(s.tag)">
+            {{ s.tag }} <small>{{ s.count }}</small>
+          </button>
+        </li>
+      }
+    </ul>
+  }
+
+  @if (!query().trim() && available().length && !full()) {
+    <div class="existing">
+      <span class="label">Tags existants :</span>
+      <ul>
+        @for (a of available(); track a.tag) {
+          <li>
+            <button type="button" (click)="add(a.tag)">
+              {{ a.tag }} <small>{{ a.count }}</small>
+            </button>
+          </li>
+        }
+      </ul>
+      @if (!showAll() && hiddenCount() > 0) {
+        <button type="button" class="more" (click)="showAll.set(true)">Voir les {{ hiddenCount() }} autres</button>
+      }
+    </div>
+  }
+</div>

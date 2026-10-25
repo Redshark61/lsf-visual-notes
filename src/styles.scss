@@ -44,3 +44,17 @@ body {
     }
   }
 }
+
+/* Barre d'actions collée en bas d'une fenêtre (app-sheet). Vert = valider, neutre = autre. */
+.sheet-actions {
+  position: sticky;
+  bottom: -1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin: auto -1rem -1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+}

@@ -19,6 +19,7 @@
     <section class="video">
       <app-blob-video [blob]="v" [label]="'Vidéo du signe ' + sign().word" />
       <button type="button" class="save" (click)="saveVideo()">Enregistrer / partager la vidéo</button>
+      <small class="mirror-note">Vidéo affichée en miroir ; le fichier enregistré ou partagé n'est pas inversé.</small>
       @if (shareError(); as e) {
         <p class="error" role="alert">{{ e }}</p>
       }

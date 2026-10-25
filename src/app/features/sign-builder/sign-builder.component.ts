@@ -19,18 +19,20 @@ import { BlobVideoComponent } from '../../shared/blob-video.component';
 import { HandsPreviewComponent, isSymmetric } from '../../shared/hands-preview/hands-preview.component';
 import { summarizeHand } from '../../shared/sign-detail/describe-hand';
 import { emptyHand, isEmptyHand } from '../../core/utils/hand-spec';
-import { WizardFooterComponent } from './wizard-footer.component';
+import { WizardFabsComponent } from './wizard-fabs.component';
+import { WizardStepperComponent } from './wizard-stepper.component';
+import { SheetComponent } from '../../shared/sheet/sheet.component';
+import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
 import { CatalogService } from '../../core/services/catalog.service';
 import { RecognitionService } from '../../core/services/recognition.service';
 import {
   MAX_NOTE_LENGTH,
-  MAX_TAGS,
   MAX_WORD_LENGTH,
   SignDraft,
   StorageService,
   VideoDraft,
-  normalizeTags,
 } from '../../core/services/storage.service';
+import { TagCount, normalizeTags } from '../../core/utils/tags';
 import { HandSpec, SignGlyph, Stroke, UserSign } from '../../core/models/sign.model';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
 import { glyphPaths } from '../../core/utils/glyph-paths';
@@ -47,7 +49,7 @@ const SIMILARITY_DEBOUNCE_MS = 450;
 /** Au-delà, le Carnet remplacerait automatiquement le tracé par ce signe : risque de confusion. */
 const CONFUSION_SCORE = 0.8;
 
-type StepId = 'glyph' | 'word' | 'dominant' | 'nonDominant' | 'zones' | 'video' | 'note';
+type StepId = 'word' | 'dominant' | 'nonDominant' | 'zones' | 'note';
 
 interface Step {
   id: StepId;
@@ -56,13 +58,11 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { id: 'glyph', title: 'Dessin', optional: true },
   { id: 'word', title: 'Nom', optional: false },
   { id: 'dominant', title: 'Main dominante', optional: true },
   { id: 'nonDominant', title: 'Main dominée', optional: true },
   { id: 'zones', title: 'Emplacement', optional: true },
-  { id: 'video', title: 'Vidéo', optional: true },
-  { id: 'note', title: 'Note', optional: true },
+  { id: 'note', title: 'Note et tags', optional: true },
 ];
 
 /** Préférence d'affichage seulement (jamais de signes ni de notes ici). */
@@ -74,6 +74,9 @@ const readSimplifyPref = () => {
     return true;
   }
 };
+/** Index des étapes (liens « Modifier » du récapitulatif). */
+const STEP_INDEX = Object.fromEntries(STEPS.map((s, i) => [s.id, i])) as Record<StepId, number>;
+
 const SIMPLIFIED_LABELS: Record<Exclude<SimplifiedKind, 'free'>, string> = {
   line: 'en ligne droite',
   polyline: 'en segments droits',
@@ -81,7 +84,6 @@ const SIMPLIFIED_LABELS: Record<Exclude<SimplifiedKind, 'free'>, string> = {
   ellipse: 'en ellipse',
   arc: 'en arc de cercle',
 };
-
 
 interface Similar {
   word: string;
@@ -95,11 +97,17 @@ interface Similar {
     BodyMapComponent,
     HandEditorComponent,
     VideoRecorderComponent,
-    WizardFooterComponent,
+    WizardFabsComponent,
+    WizardStepperComponent,
+    SheetComponent,
+    TagInputComponent,
     BlobVideoComponent,
     HandsPreviewComponent,
     GlyphPathsPipe,
-    ColorPaletteComponent, PercentPipe, RouterLink],
+    ColorPaletteComponent,
+    PercentPipe,
+    RouterLink,
+  ],
   templateUrl: './sign-builder.component.html',
   styleUrl: './sign-builder.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -113,13 +121,15 @@ export class SignBuilderComponent {
   private readonly router = inject(Router);
 
   private readonly canvas = viewChild(SmartCanvasComponent);
+  private readonly drawingSheet = viewChild<SheetComponent>('drawingSheet');
+  private readonly videoSheet = viewChild<SheetComponent>('videoSheet');
   private readonly heading = viewChild<ElementRef<HTMLElement>>('stepHeading');
 
   protected readonly steps = STEPS;
   protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
   protected readonly maxWordLength = MAX_WORD_LENGTH;
   protected readonly maxNoteLength = MAX_NOTE_LENGTH;
-  protected readonly maxTags = MAX_TAGS;
+  protected readonly stepIndexOf = STEP_INDEX;
 
   // --- Brouillon
   protected readonly strokes = signal<Stroke[]>([]);
@@ -142,7 +152,10 @@ export class SignBuilderComponent {
   });
   protected readonly hasVideo = computed(() => !!this.currentVideo());
   protected readonly recordingAgain = signal(false);
-  /** Prise filmée, pas encore validée (bouton vert « Utiliser cette vidéo » du pied de page). */
+  /** Fenêtres de dessin et de vidéo (boutons flottants) : contenu créé à l'ouverture seulement. */
+  protected readonly drawingOpen = signal(false);
+  protected readonly videoOpen = signal(false);
+  /** Prise filmée, pas encore validée (bouton vert « Utiliser cette vidéo » de la fenêtre). */
   protected readonly pendingVideo = signal<VideoDraft | null>(null);
   private readonly recorder = viewChild(VideoRecorderComponent);
   /** Couleur du pinceau pour les prochains traits (null = noir). La reconnaissance l'ignore. */
@@ -163,7 +176,9 @@ export class SignBuilderComponent {
   protected readonly mirroredFromDominant = signal(false);
   protected readonly zoneIds = signal<string[]>([]);
   protected readonly note = signal('');
-  protected readonly tagsInput = signal('');
+  protected readonly tagList = signal<string[]>([]);
+  /** Tags déjà utilisés dans le dictionnaire (liste à toucher, suggestions). */
+  protected readonly existingTags = signal<TagCount[]>([]);
 
   // --- Navigation et état
   protected readonly stepIndex = signal(0);
@@ -181,7 +196,7 @@ export class SignBuilderComponent {
   protected readonly catalogError = signal<string | null>(null);
   protected readonly similar = signal<Similar[]>([]);
 
-  protected readonly tags = computed(() => normalizeTags(this.tagsInput().split(',')));
+  protected readonly tags = computed(() => normalizeTags(this.tagList()));
   /** Récapitulatif : « Index → Main plate · Arc + Contact, vers le haut, répété · Paume vers soi ». */
   protected readonly dominantSummary = computed(() => summarizeHand(this.catalog, this.dominant()));
   protected readonly nonDominantSummary = computed(() => {
@@ -192,12 +207,10 @@ export class SignBuilderComponent {
 
   /** Une étape est valide quand on peut la quitter vers l'avant : seul le nom est obligatoire. */
   private readonly valid = computed<Record<StepId, boolean>>(() => ({
-    glyph: true,
     word: this.word().trim().length > 0,
     dominant: true,
     nonDominant: true,
     zones: true,
-    video: true,
     note: true,
   }));
   protected readonly canAdvance = computed(() => this.valid()[this.step().id]);
@@ -215,16 +228,12 @@ export class SignBuilderComponent {
   /** L'étape optionnelle est-elle vide (bouton « Passer » plutôt que « Suivant ») ? */
   protected readonly stepIsEmpty = computed(() => {
     switch (this.step().id) {
-      case 'glyph':
-        return !this.glyph();
       case 'dominant':
         return isEmptyHand(this.dominant());
       case 'nonDominant':
         return isEmptyHand(this.nonDominant());
       case 'zones':
         return this.zoneIds().length === 0;
-      case 'video':
-        return !this.hasVideo();
       default:
         return false;
     }
@@ -235,6 +244,7 @@ export class SignBuilderComponent {
 
   constructor() {
     this.loadCatalog();
+    this.storage.listTags().then((tags) => this.existingTags.set(tags));
     const draft = this.transfer.takeDraft();
     if (draft) {
       this.fromNoteId.set(draft.noteId);
@@ -245,7 +255,6 @@ export class SignBuilderComponent {
         const strokes = draft.strokes.map((s) => s.map((p) => ({ ...p, x: p.x - minX + 24, y: p.y - minY + 24 })));
         this.strokes.set(strokes);
         this.glyph.set(extractGesture(strokes));
-        this.stepIndex.set(1); // le dessin est fait : on passe directement au nom
       }
     }
     const route = inject(ActivatedRoute).snapshot;
@@ -269,7 +278,6 @@ export class SignBuilderComponent {
   protected goTo(index: number): void {
     if (index < 0 || index >= STEPS.length || !this.reachable()[index]) return;
     if (STEPS[index].id === 'nonDominant') this.prefillSymmetricHand();
-    this.pendingVideo.set(null); // une prise non validée est abandonnée en quittant l'étape
     this.stepIndex.set(index);
     this.error.set(null);
     // Accessibilité : on annonce la nouvelle étape en y plaçant le focus.
@@ -306,7 +314,32 @@ export class SignBuilderComponent {
     this.mirroredFromDominant.set(true);
   }
 
-  // --- Étape dessin
+  // --- Fenêtres : dessin et vidéo (boutons flottants)
+
+  protected openDrawing(): void {
+    this.drawingOpen.set(true);
+    this.drawingSheet()?.show(); // ouverte avant la création du contenu : le canevas se mesure à la bonne taille
+  }
+
+  protected onDrawingClosed(): void {
+    this.drawingOpen.set(false);
+    this.lastSimplified.set(null);
+  }
+
+  protected openVideo(): void {
+    this.recordingAgain.set(false);
+    this.videoOpen.set(true);
+    this.videoSheet()?.show();
+  }
+
+  /** Fermer la fenêtre libère la caméra ; une prise non validée est abandonnée. */
+  protected onVideoClosed(): void {
+    this.videoOpen.set(false);
+    this.pendingVideo.set(null);
+    this.recordingAgain.set(false);
+  }
+
+  // --- Dessin
 
   protected undo(): void {
     this.lastSimplified.set(null);
@@ -360,9 +393,10 @@ export class SignBuilderComponent {
     this.zoneIds.set([...a.locationZoneIds]);
     if (sign.video) this.storage.getVideo(sign.id).then((v) => this.existingVideo.set(v?.blob ?? null));
     this.note.set(sign.note ?? '');
-    this.tagsInput.set(sign.tags.join(', '));
-    // Récapitulatif (chaque étape a un lien « Modifier »), ou directement le dessin.
-    this.stepIndex.set(drawingFirst ? 0 : STEPS.length - 1);
+    this.tagList.set([...sign.tags]);
+    // Récapitulatif (chaque étape a un lien « Modifier ») ; ou directement la fenêtre de dessin.
+    this.stepIndex.set(STEPS.length - 1);
+    if (drawingFirst) afterNextRender(() => this.openDrawing(), { injector: this.injector });
   }
 
   /** Modification : supprime le dessin (le signe devient une simple entrée de lexique). */
@@ -442,13 +476,13 @@ export class SignBuilderComponent {
     this.pendingVideo.set(video);
   }
 
-  /** Valide la prise et passe à l'étape suivante (même emplacement que « Passer »). */
+  /** Valide la prise et ferme la fenêtre. */
   protected useVideo(): void {
     const pending = this.pendingVideo();
     if (!pending) return;
     this.videoDraft.set(pending);
     this.recordingAgain.set(false);
-    this.goTo(this.stepIndex() + 1);
+    this.videoSheet()?.hide();
   }
 
   protected retakeVideo(): void {
@@ -511,11 +545,14 @@ export class SignBuilderComponent {
     this.existingVideo.set(null);
     this.recordingAgain.set(false);
     this.note.set('');
-    this.tagsInput.set('');
+    this.tagList.set([]);
     this.saved.set(null);
     this.fromNoteId.set(null);
     this.editing.set(null);
     this.keptGlyph.set(null);
+    this.drawingOpen.set(false);
+    this.videoOpen.set(false);
+    this.storage.listTags().then((tags) => this.existingTags.set(tags));
     this.goTo(0);
   }
 }

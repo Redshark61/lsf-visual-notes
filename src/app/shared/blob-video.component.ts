@@ -5,7 +5,16 @@ import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, 
   selector: 'app-blob-video',
   template: `
     @if (url(); as src) {
-      <video [src]="src" autoplay loop muted playsinline [controls]="controls()" [attr.aria-label]="label()"></video>
+      <video
+        [src]="src"
+        [class.mirrored]="mirrored()"
+        autoplay
+        loop
+        muted
+        playsinline
+        [controls]="controls()"
+        [attr.aria-label]="label()"
+      ></video>
     }
   `,
   styles: `
@@ -19,6 +28,10 @@ import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, 
       border-radius: 8px;
       background: #000;
     }
+    /* Miroir (comme l'aperçu de la caméra) : on se voit comme dans un reflet, utile pour imiter le signe. */
+    video.mirrored {
+      transform: scaleX(-1);
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -26,6 +39,8 @@ export class BlobVideoComponent {
   readonly blob = input.required<Blob>();
   readonly controls = input(true);
   readonly label = input('Vidéo du signe');
+  /** Affichage en miroir (le fichier lui-même n'est pas modifié). */
+  readonly mirrored = input(true);
   protected readonly url = signal<string | null>(null);
 
   constructor() {

@@ -1,17 +1,49 @@
 <section class="dictionary">
-  <header class="head">
-    <h1>Dictionnaire</h1>
+  <div class="toolbar">
+    <header class="head">
+      <h1>Dictionnaire</h1>
+      @if (signs(); as all) {
+        <span class="count">
+          @if (hasFilters()) {
+            {{ filtered().length }} / {{ all.length }} signes
+          } @else {
+            {{ all.length }} signe{{ all.length > 1 ? 's' : '' }}
+          }
+        </span>
+      }
+    </header>
     @if (signs(); as all) {
-      <span class="count">
-        @if (hasFilters()) {
-          {{ filtered().length }} / {{ all.length }} signes
-        } @else {
-          {{ all.length }} signe{{ all.length > 1 ? 's' : '' }}
+      @if (all.length) {
+        <div class="filters">
+          <input
+            type="search"
+            placeholder="Rechercher un mot, un tag, une note…"
+            aria-label="Rechercher"
+            [value]="query()"
+            (input)="query.set($any($event.target).value)"
+          />
+          <select aria-label="Configuration de main" (change)="handId.set($any($event.target).value)">
+            <option value="" [selected]="!handId()">Toutes les configurations</option>
+            @for (h of usedHands(); track h.id) {
+              <option [value]="h.id" [selected]="h.id === handId()">{{ h.name }}</option>
+            }
+          </select>
+          <select aria-label="Tri" (change)="sort.set($any($event.target).value)">
+            <option value="alpha" [selected]="sort() === 'alpha'">A → Z</option>
+            <option value="recent" [selected]="sort() === 'recent'">Plus récents</option>
+          </select>
+        </div>
+
+        @if (allTags().length) {
+          <div class="tags" role="group" aria-label="Filtrer par tag">
+            @for (t of allTags(); track t) {
+              <button type="button" class="tag" [attr.aria-pressed]="tag() === t" (click)="toggleTag(t)">{{ t }}</button>
+            }
+          </div>
         }
-      </span>
+      }
     }
-    <a class="button primary" routerLink="/atelier">Nouveau signe</a>
-  </header>
+  </div>
 
   @if (error(); as e) {
     <p class="error" role="alert">{{ e }}</p>
@@ -24,34 +56,6 @@
         <a class="button primary" routerLink="/atelier">Créer mon premier signe</a>
       </div>
     } @else {
-      <div class="filters">
-        <input
-          type="search"
-          placeholder="Rechercher un mot, un tag, une note…"
-          aria-label="Rechercher"
-          [value]="query()"
-          (input)="query.set($any($event.target).value)"
-        />
-        <select aria-label="Configuration de main" (change)="handId.set($any($event.target).value)">
-          <option value="" [selected]="!handId()">Toutes les configurations</option>
-          @for (h of usedHands(); track h.id) {
-            <option [value]="h.id" [selected]="h.id === handId()">{{ h.name }}</option>
-          }
-        </select>
-        <select aria-label="Tri" (change)="sort.set($any($event.target).value)">
-          <option value="alpha" [selected]="sort() === 'alpha'">A → Z</option>
-          <option value="recent" [selected]="sort() === 'recent'">Plus récents</option>
-        </select>
-      </div>
-
-      @if (allTags().length) {
-        <div class="tags" role="group" aria-label="Filtrer par tag">
-          @for (t of allTags(); track t) {
-            <button type="button" class="tag" [attr.aria-pressed]="tag() === t" (click)="toggleTag(t)">{{ t }}</button>
-          }
-        </div>
-      }
-
       <ul class="grid">
         @for (s of filtered(); track s.id) {
           <li>
@@ -91,6 +95,13 @@
     <p>Chargement…</p>
   }
 </section>
+
+@if (signs()?.length) {
+  <a class="fab" routerLink="/atelier" aria-label="Nouveau signe">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+    Nouveau signe
+  </a>
+}
 
 <app-sign-dialog [sign]="detail()" (closed)="detail.set(null)">
   @if (detail(); as d) {

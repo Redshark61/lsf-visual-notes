@@ -36,34 +36,18 @@
         <button type="button" class="link" (click)="backToNotebook()">Revenir au Carnet sans enregistrer</button>
       </p>
     }
-    <nav class="stepper" aria-label="Étapes">
-      <ol>
-        @for (s of steps; track s.id; let i = $index) {
-          <li>
-            <button
-              type="button"
-              [class.current]="i === stepIndex()"
-              [class.done]="i < stepIndex()"
-              [disabled]="!reachable()[i]"
-              [attr.aria-current]="i === stepIndex() ? 'step' : null"
-              (click)="goTo(i)"
-            >
-              <span class="n">{{ i + 1 }}</span>
-              <span class="t">{{ s.title }}</span>
-            </button>
-          </li>
-        }
-      </ol>
-    </nav>
+    <div class="layout">
+      <app-wizard-stepper [steps]="steps" [current]="stepIndex()" [reachable]="reachable()" (selected)="goTo($event)" />
 
-    <header class="step-header">
-      <h1 tabindex="-1" #stepHeading>
-        {{ step().title }}
-        @if (step().optional) {
-          <small>(facultatif)</small>
-        }
-      </h1>
-    </header>
+      <div class="content">
+        <header class="step-header">
+          <h1 tabindex="-1" #stepHeading>
+            {{ step().title }}
+            @if (step().optional) {
+              <small>(facultatif)</small>
+            }
+          </h1>
+        </header>
 
     <div class="step-body">
       @if (catalogError(); as e) {
@@ -71,84 +55,6 @@
       }
 
       @switch (step().id) {
-        @case ('glyph') {
-          <p class="hint">
-            Dessinez le glyphe rapide qui servira de raccourci dans le Carnet. Pour un simple lexique, passez cette étape.
-          </p>
-          <div class="row tools">
-            <app-color-palette label="Couleur du pinceau :" [(value)]="brushColor" />
-            <label class="check">
-              <input type="checkbox" [checked]="simplify()" (change)="toggleSimplify($any($event.target).checked)" />
-              Simplifier les traits <small>(lignes droites, cercles, arcs)</small>
-            </label>
-          </div>
-          @if (keptGlyph() && strokes().length === 0) {
-            <p class="kept">
-              Dessin actuel conservé (aperçu ci-dessous). Dessinez sur le canevas pour le remplacer.
-              <button type="button" class="link" (click)="removeGlyph()">Retirer le dessin</button>
-            </p>
-          }
-          <app-smart-canvas
-            class="pad"
-            [initialStrokes]="strokes()"
-            [initialColors]="strokeColors()"
-            [brushColor]="brushColor()"
-            [simplify]="simplify()"
-            (strokeStart)="onStrokeStart()"
-            (strokeSimplified)="onStrokeSimplified($event)"
-            (strokesChange)="onStrokesChange($event)"
-          />
-          <div class="row">
-            <button type="button" (click)="undo()" [disabled]="!strokes().length">Annuler le trait</button>
-            <button type="button" (click)="clearDrawing()" [disabled]="!strokes().length">Effacer</button>
-            @if (lastSimplified(); as ls) {
-              <span class="simplified" role="status">
-                Trait simplifié {{ ls.label }}.
-                <button type="button" class="link" (click)="keepOriginal()">Garder le tracé original</button>
-              </span>
-            }
-          </div>
-          @if (previewPaths().length) {
-            <div class="recolor">
-              <svg class="glyph preview" [attr.viewBox]="viewBox" role="group" aria-label="Aperçu dans les notes">
-                @for (p of previewPaths(); track $index; let i = $index) {
-                  <path
-                    [attr.d]="p.d"
-                    [attr.fill]="p.color"
-                    role="button"
-                    tabindex="0"
-                    [attr.aria-label]="'Trait ' + (i + 1) + ' : appliquer la couleur du pinceau'"
-                    (click)="recolor(i)"
-                    (keydown.enter)="recolor(i)"
-                    (keydown.space)="$event.preventDefault(); recolor(i)"
-                  />
-                }
-              </svg>
-              <p class="hint">
-                Aperçu dans les notes. Touchez un trait pour lui donner la couleur du pinceau (le Carnet reconnaît la
-                forme, pas la couleur).
-              </p>
-            </div>
-          }
-          @if (confusable().length) {
-            <p class="warning" role="status">
-              Ce glyphe ressemble beaucoup à
-              @for (s of confusable(); track s.word; let last = $last) {
-                <strong>« {{ s.word }} »</strong> ({{ s.score | percent }}){{ last ? '' : ', ' }}
-              }
-              : le Carnet risque de les confondre. Ajoutez un détail pour les distinguer.
-            </p>
-          } @else if (similar().length) {
-            <p class="info" role="status">
-              Proche de
-              @for (s of similar(); track s.word; let last = $last) {
-                « {{ s.word }} » ({{ s.score | percent }}){{ last ? '' : ', ' }}
-              }
-              — reste distinguable.
-            </p>
-          }
-        }
-
         @case ('word') {
           <label class="field">
             <span>Mot ou concept associé au signe</span>
@@ -197,25 +103,6 @@
           }
         }
 
-        @case ('video') {
-          @if (currentVideo(); as video) {
-            @if (recordingAgain()) {
-              <app-video-recorder (pending)="onVideoPending($event)" />
-              <button type="button" class="link" (click)="recordingAgain.set(false)">Garder la vidéo actuelle</button>
-            } @else {
-              <div class="video-current">
-                <app-blob-video [blob]="video" />
-              </div>
-              <div class="row">
-                <button type="button" (click)="recordingAgain.set(true)">Refaire la vidéo</button>
-                <button type="button" class="link danger" (click)="removeVideo()">Supprimer la vidéo</button>
-              </div>
-            }
-          } @else {
-            <app-video-recorder (pending)="onVideoPending($event)" />
-          }
-        }
-
         @case ('note') {
           <label class="field">
             <span>Note personnelle</span>
@@ -227,23 +114,7 @@
               (input)="note.set($any($event.target).value)"
             ></textarea>
           </label>
-          <label class="field">
-            <span>Tags <small>(séparés par des virgules, {{ maxTags }} max.)</small></span>
-            <input
-              type="text"
-              autocomplete="off"
-              placeholder="ex : famille, lieux"
-              [value]="tagsInput()"
-              (input)="tagsInput.set($any($event.target).value)"
-            />
-          </label>
-          @if (tags().length) {
-            <div class="tags">
-              @for (t of tags(); track t) {
-                <span class="tag">{{ t }}</span>
-              }
-            </div>
-          }
+          <app-tag-input [known]="existingTags()" [(tags)]="tagList" />
 
           <h2>Récapitulatif</h2>
           @if (dominant().handshapeIds.length) {
@@ -261,21 +132,21 @@
               } @else {
                 Aucun (lexique seul)
               }
-              <button type="button" class="link" (click)="goTo(0)">Modifier</button>
+              <button type="button" class="link" (click)="openDrawing()">Modifier</button>
             </dd>
             <dt>Nom</dt>
             <dd>
-              {{ word() }} <button type="button" class="link" (click)="goTo(1)">Modifier</button>
+              {{ word() }} <button type="button" class="link" (click)="goTo(stepIndexOf.word)">Modifier</button>
             </dd>
             <dt>Main dominante</dt>
             <dd>
               {{ dominantSummary() }}
-              <button type="button" class="link" (click)="goTo(2)">Modifier</button>
+              <button type="button" class="link" (click)="goTo(stepIndexOf.dominant)">Modifier</button>
             </dd>
             <dt>Main dominée</dt>
             <dd>
               {{ nonDominantSummary() }}
-              <button type="button" class="link" (click)="goTo(3)">Modifier</button>
+              <button type="button" class="link" (click)="goTo(stepIndexOf.nonDominant)">Modifier</button>
             </dd>
             <dt>Emplacement</dt>
             <dd>
@@ -284,12 +155,12 @@
               } @empty {
                 Non précisé
               }
-              <button type="button" class="link" (click)="goTo(4)">Modifier</button>
+              <button type="button" class="link" (click)="goTo(stepIndexOf.zones)">Modifier</button>
             </dd>
             <dt>Vidéo</dt>
             <dd>
               {{ hasVideo() ? 'Oui' : 'Aucune' }}
-              <button type="button" class="link" (click)="goTo(5)">Modifier</button>
+              <button type="button" class="link" (click)="openVideo()">Modifier</button>
             </dd>
           </dl>
         }
@@ -300,7 +171,10 @@
       }
     </div>
 
-    <app-wizard-footer
+      </div>
+    </div>
+
+    <app-wizard-fabs
       [canGoBack]="stepIndex() > 0"
       [isLast]="isLast()"
       [canAdvance]="canAdvance()"
@@ -308,12 +182,133 @@
       [skipping]="step().optional && stepIsEmpty()"
       [canSave]="canSave()"
       [saving]="saving()"
-      [pendingVideo]="step().id === 'video' && !!pendingVideo()"
+      [hasGlyph]="!!glyph()"
+      [hasVideo]="hasVideo()"
       (previous)="previous()"
       (next)="next()"
       (save)="save()"
-      (useVideo)="useVideo()"
-      (retake)="retakeVideo()"
+      (drawing)="openDrawing()"
+      (video)="openVideo()"
     />
+
+    <app-sheet #drawingSheet title="Dessin du signe" (closed)="onDrawingClosed()">
+      @if (drawingOpen()) {
+        <p class="hint">
+          Dessinez le glyphe rapide qui servira de raccourci dans le Carnet. Sans dessin, le signe reste dans le
+          lexique mais n'est pas reconnu dans le Carnet.
+        </p>
+        <div class="row tools">
+          <app-color-palette label="Couleur du pinceau :" [(value)]="brushColor" />
+          <label class="check">
+            <input type="checkbox" [checked]="simplify()" (change)="toggleSimplify($any($event.target).checked)" />
+            Simplifier les traits <small>(lignes droites, cercles, arcs)</small>
+          </label>
+        </div>
+        @if (keptGlyph() && strokes().length === 0) {
+          <p class="kept">Dessin actuel conservé (aperçu ci-dessous). Dessinez sur le canevas pour le remplacer.</p>
+        }
+        <app-smart-canvas
+          class="pad"
+          [initialStrokes]="strokes()"
+          [initialColors]="strokeColors()"
+          [brushColor]="brushColor()"
+          [simplify]="simplify()"
+          (strokeStart)="onStrokeStart()"
+          (strokeSimplified)="onStrokeSimplified($event)"
+          (strokesChange)="onStrokesChange($event)"
+        />
+        <div class="row">
+          <button type="button" (click)="undo()" [disabled]="!strokes().length">Annuler le trait</button>
+          <button type="button" (click)="clearDrawing()" [disabled]="!strokes().length">Effacer</button>
+          @if (lastSimplified(); as ls) {
+            <span class="simplified" role="status">
+              Trait simplifié {{ ls.label }}.
+              <button type="button" class="link" (click)="keepOriginal()">Garder le tracé original</button>
+            </span>
+          }
+        </div>
+        @if (previewPaths().length) {
+          <div class="recolor">
+            <svg class="glyph preview" [attr.viewBox]="viewBox" role="group" aria-label="Aperçu dans les notes">
+              @for (p of previewPaths(); track $index; let i = $index) {
+                <path
+                  [attr.d]="p.d"
+                  [attr.fill]="p.color"
+                  role="button"
+                  tabindex="0"
+                  [attr.aria-label]="'Trait ' + (i + 1) + ' : appliquer la couleur du pinceau'"
+                  (click)="recolor(i)"
+                  (keydown.enter)="recolor(i)"
+                  (keydown.space)="$event.preventDefault(); recolor(i)"
+                />
+              }
+            </svg>
+            <p class="hint">
+              Aperçu dans les notes. Touchez un trait pour lui donner la couleur du pinceau (le Carnet reconnaît la
+              forme, pas la couleur).
+            </p>
+          </div>
+        }
+        @if (confusable().length) {
+          <p class="warning" role="status">
+            Ce glyphe ressemble beaucoup à
+            @for (s of confusable(); track s.word; let last = $last) {
+              <strong>« {{ s.word }} »</strong> ({{ s.score | percent }}){{ last ? '' : ', ' }}
+            }
+            : le Carnet risque de les confondre. Ajoutez un détail pour les distinguer.
+          </p>
+        } @else if (similar().length) {
+          <p class="info" role="status">
+            Proche de
+            @for (s of similar(); track s.word; let last = $last) {
+              « {{ s.word }} » ({{ s.score | percent }}){{ last ? '' : ', ' }}
+            }
+            — reste distinguable.
+          </p>
+        }
+        <div class="sheet-actions">
+          @if (glyph()) {
+            <button type="button" class="danger" (click)="removeGlyph()">Retirer le dessin</button>
+          }
+          <button type="button" class="confirm" (click)="drawingSheet.hide()">Terminé</button>
+        </div>
+      }
+    </app-sheet>
+
+    <app-sheet #videoSheet title="Vidéo du signe" (closed)="onVideoClosed()">
+      @if (videoOpen()) {
+        @if (currentVideo(); as video) {
+          @if (!recordingAgain()) {
+            <app-blob-video [blob]="video" />
+            <p class="hint">Filmé en 5 secondes maximum, sans son. Affichée en miroir, comme un reflet.</p>
+            <div class="sheet-actions">
+              <button type="button" class="danger" (click)="removeVideo()">Supprimer</button>
+              <button type="button" (click)="recordingAgain.set(true)">Refaire</button>
+              <button type="button" class="primary" (click)="videoSheet.hide()">Terminé</button>
+            </div>
+          } @else {
+            <app-video-recorder (pending)="onVideoPending($event)" />
+            <div class="sheet-actions">
+              @if (pendingVideo()) {
+                <button type="button" (click)="retakeVideo()">Refaire</button>
+                <button type="button" class="confirm" (click)="useVideo()">Utiliser cette vidéo</button>
+              } @else {
+                <button type="button" (click)="recordingAgain.set(false)">Garder la vidéo actuelle</button>
+              }
+            </div>
+          }
+        } @else {
+          <app-video-recorder (pending)="onVideoPending($event)" />
+          <div class="sheet-actions">
+            @if (pendingVideo()) {
+              <button type="button" (click)="retakeVideo()">Refaire</button>
+              <button type="button" class="confirm" (click)="useVideo()">Utiliser cette vidéo</button>
+            } @else {
+              <button type="button" (click)="videoSheet.hide()">Fermer</button>
+            }
+          </div>
+        }
+      }
+    </app-sheet>
   }
 </section>

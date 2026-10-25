@@ -5,6 +5,7 @@ import { BACKUP_FORMAT, BACKUP_VERSION, Backup } from '../models/backup.model';
 import { CustomHandshape } from '../models/catalog.model';
 import { blobToDataUrl, dataUrlToBlob } from '../utils/image';
 import { normalizeHand } from '../utils/hand-spec';
+import { TagCount, normalizeTags, tallyTags } from '../utils/tags';
 import { CatalogService } from './catalog.service';
 import {
   NoteElement,
@@ -19,8 +20,6 @@ import {
 import { RecognitionService } from './recognition.service';
 
 export const MAX_WORD_LENGTH = 80;
-export const MAX_TAG_LENGTH = 30;
-export const MAX_TAGS = 10;
 
 export const MAX_NOTE_LENGTH = 2000;
 export const MAX_NOTE_TITLE_LENGTH = 120;
@@ -46,10 +45,6 @@ export interface VideoDraft {
 }
 
 /** "Famille, maison ,famille" → ["famille", "maison"] */
-export function normalizeTags(tags: string[]): string[] {
-  const clean = tags.map((t) => t.trim().toLowerCase().slice(0, MAX_TAG_LENGTH)).filter(Boolean);
-  return [...new Set(clean)].slice(0, MAX_TAGS);
-}
 
 async function mergeInto<T extends { id: string; updatedAt: number }>(
   table: Table<T, string>,
@@ -162,6 +157,11 @@ export class StorageService {
 
   getVideo(signId: string): Promise<SignVideo | undefined> {
     return db.videos.get(signId);
+  }
+
+  /** Tags existants avec leur nombre d'utilisations (index multi-entrées de Dexie, sans charger les signes). */
+  async listTags(): Promise<TagCount[]> {
+    return tallyTags((await db.signs.orderBy('tags').keys()) as string[]);
   }
 
   /** Tous les signes, par ordre alphabétique. */

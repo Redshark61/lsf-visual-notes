@@ -33,7 +33,9 @@ import {
   VideoDraft,
 } from '../../core/services/storage.service';
 import { TagCount, normalizeTags } from '../../core/utils/tags';
-import { HandSpec, SignGlyph, Stroke, UserSign } from '../../core/models/sign.model';
+import { HandSpec, MAX_COMPONENTS, SignGlyph, Stroke, UserSign } from '../../core/models/sign.model';
+import { createsCycle } from '../../core/utils/composition';
+import { WordEntryComponent } from '../../shared/word-entry/word-entry.component';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
 import { glyphPaths } from '../../core/utils/glyph-paths';
 import { SimplifiedKind } from '../../core/utils/stroke-simplify';
@@ -49,7 +51,7 @@ const SIMILARITY_DEBOUNCE_MS = 450;
 /** Au-delà, le Carnet remplacerait automatiquement le tracé par ce signe : risque de confusion. */
 const CONFUSION_SCORE = 0.8;
 
-type StepId = 'word' | 'dominant' | 'nonDominant' | 'zones' | 'note';
+type StepId = 'word' | 'components' | 'dominant' | 'nonDominant' | 'zones' | 'note';
 
 interface Step {
   id: StepId;
@@ -59,6 +61,7 @@ interface Step {
 
 const STEPS: Step[] = [
   { id: 'word', title: 'Nom', optional: false },
+  { id: 'components', title: 'Composition', optional: true },
   { id: 'dominant', title: 'Main dominante', optional: true },
   { id: 'nonDominant', title: 'Main dominée', optional: true },
   { id: 'zones', title: 'Emplacement', optional: true },
@@ -101,6 +104,7 @@ interface Similar {
     WizardStepperComponent,
     SheetComponent,
     TagInputComponent,
+    WordEntryComponent,
     BlobVideoComponent,
     HandsPreviewComponent,
     GlyphPathsPipe,
@@ -175,6 +179,22 @@ export class SignBuilderComponent {
   /** La main dominée vient d'être recopiée depuis la dominante (symétrie). */
   protected readonly mirroredFromDominant = signal(false);
   protected readonly zoneIds = signal<string[]>([]);
+  /** Signe composé : ids des signes composants, dans l'ordre. */
+  protected readonly components = signal<string[]>([]);
+  /** Dictionnaire (chargé à la première visite de l'étape Composition). */
+  private readonly allSigns = signal<UserSign[]>([]);
+  private signsLoaded = false;
+  protected readonly signsById = computed(() => new Map(this.allSigns().map((s) => [s.id, s])));
+  /** Signes que l'on peut ajouter : pas le signe modifié, ni un signe qui le contient (boucle). */
+  protected readonly composable = computed(() => {
+    const editing = this.editing()?.id;
+    const byId = this.signsById();
+    return this.allSigns().filter((s) => !editing || !createsCycle(editing, s.id, byId));
+  });
+  protected readonly componentSigns = computed(() =>
+    this.components().map((id) => ({ id, sign: this.signsById().get(id) })),
+  );
+  protected readonly maxComponents = MAX_COMPONENTS;
   protected readonly note = signal('');
   protected readonly tagList = signal<string[]>([]);
   /** Tags déjà utilisés dans le dictionnaire (liste à toucher, suggestions). */
@@ -208,6 +228,7 @@ export class SignBuilderComponent {
   /** Une étape est valide quand on peut la quitter vers l'avant : seul le nom est obligatoire. */
   private readonly valid = computed<Record<StepId, boolean>>(() => ({
     word: this.word().trim().length > 0,
+    components: true,
     dominant: true,
     nonDominant: true,
     zones: true,
@@ -228,6 +249,8 @@ export class SignBuilderComponent {
   /** L'étape optionnelle est-elle vide (bouton « Passer » plutôt que « Suivant ») ? */
   protected readonly stepIsEmpty = computed(() => {
     switch (this.step().id) {
+      case 'components':
+        return this.components().length === 0;
       case 'dominant':
         return isEmptyHand(this.dominant());
       case 'nonDominant':
@@ -278,6 +301,7 @@ export class SignBuilderComponent {
   protected goTo(index: number): void {
     if (index < 0 || index >= STEPS.length || !this.reachable()[index]) return;
     if (STEPS[index].id === 'nonDominant') this.prefillSymmetricHand();
+    if (STEPS[index].id === 'components') this.loadAllSigns();
     this.stepIndex.set(index);
     this.error.set(null);
     // Accessibilité : on annonce la nouvelle étape en y plaçant le focus.
@@ -313,6 +337,42 @@ export class SignBuilderComponent {
     this.nonDominant.set(structuredClone(this.dominant()));
     this.mirroredFromDominant.set(true);
   }
+
+  // --- Composition (signe composé)
+
+  private loadAllSigns(): void {
+    if (this.signsLoaded) return;
+    this.signsLoaded = true;
+    this.storage
+      .listSigns()
+      .then((signs) => this.allSigns.set(signs))
+      .catch(() => (this.signsLoaded = false));
+  }
+
+  protected addComponent(signId: string): void {
+    if (this.components().length < MAX_COMPONENTS) this.components.update((c) => [...c, signId]);
+  }
+
+  protected removeComponent(index: number): void {
+    this.components.update((c) => c.filter((_, i) => i !== index));
+  }
+
+  protected moveComponent(index: number, delta: -1 | 1): void {
+    const target = index + delta;
+    this.components.update((c) => {
+      if (target < 0 || target >= c.length) return c;
+      const next = [...c];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  /** « attention + prendre soin » (les signes supprimés sont signalés). */
+  protected readonly compositionText = computed(() =>
+    this.componentSigns()
+      .map((c) => c.sign?.word ?? 'signe supprimé')
+      .join(' + '),
+  );
 
   // --- Fenêtres : dessin et vidéo (boutons flottants)
 
@@ -391,6 +451,8 @@ export class SignBuilderComponent {
     this.dominant.set(a.dominant ? structuredClone(a.dominant) : emptyHand());
     this.nonDominant.set(a.nonDominant ? structuredClone(a.nonDominant) : null);
     this.zoneIds.set([...a.locationZoneIds]);
+    this.components.set([...(sign.components ?? [])]);
+    if (sign.components?.length) this.loadAllSigns();
     if (sign.video) this.storage.getVideo(sign.id).then((v) => this.existingVideo.set(v?.blob ?? null));
     this.note.set(sign.note ?? '');
     this.tagList.set([...sign.tags]);
@@ -459,6 +521,7 @@ export class SignBuilderComponent {
         },
         glyph: this.glyphWithColor(),
         note: this.note(),
+        components: this.components(),
       } satisfies SignDraft;
       const withVideo = { ...draft, video: this.videoDraft() };
       const sign = editing
@@ -540,6 +603,7 @@ export class SignBuilderComponent {
     this.nonDominant.set(null);
     this.mirroredFromDominant.set(false);
     this.zoneIds.set([]);
+    this.components.set([]);
     this.videoDraft.set(undefined);
     this.pendingVideo.set(null);
     this.existingVideo.set(null);

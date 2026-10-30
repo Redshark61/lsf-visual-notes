@@ -24,6 +24,7 @@ import { MAX_NOTE_TITLE_LENGTH, StorageService } from '../../core/services/stora
 import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
 import { MapNode, MindMap, NoteElement, NotePage, Stroke, UserSign } from '../../core/models/sign.model';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
+import { leafSigns, missingComponentIds } from '../../core/utils/composition';
 
 /** Délai après le lever du stylet, pour laisser le temps de tracer un glyphe en plusieurs traits. */
 const RECOGNITION_DEBOUNCE_MS = 450;
@@ -124,6 +125,11 @@ export class NotebookComponent {
   protected readonly selectedNodeId = signal<string | null>(null);
   protected readonly isMap = computed(() => this.note()?.layout === 'map');
   protected readonly hasElements = computed(() => allElements(this.note()).length > 0);
+  /** « attention + prendre soin » pour le signe composé sélectionné. */
+  protected readonly selectedComposition = computed(() => {
+    const ids = this.selectedSign()?.components ?? [];
+    return ids.map((id) => this.signs().get(id)?.word ?? 'signe supprimé').join(' + ');
+  });
   /** Signe de l'élément dont la bulle d'informations est ouverte. */
   protected readonly selectedSign = computed(() => {
     const element = allElements(this.note()).find((e) => e.id === this.selectedId());
@@ -267,11 +273,21 @@ export class NotebookComponent {
       .catch((e) => this.error.set(`Échec de l'enregistrement : ${e}`));
   }
 
+  /** Charge les signes manquants, et leurs composants (un signe composé affiche ceux-ci). */
   private async loadSigns(ids: string[]): Promise<void> {
-    const missing = ids.filter((id) => !this.signs().has(id));
-    if (!missing.length) return;
-    const found = await this.storage.getSigns(missing);
-    this.signs.update((m) => new Map([...m, ...found]));
+    const attempted = new Set<string>();
+    let wanted = ids.filter((id) => !this.signs().has(id));
+    while (wanted.length) {
+      wanted.forEach((id) => attempted.add(id));
+      const found = await this.storage.getSigns(wanted);
+      this.signs.update((m) => new Map([...m, ...found]));
+      wanted = missingComponentIds(found.values(), this.signs()).filter((id) => !attempted.has(id));
+    }
+  }
+
+  /** Dessins à afficher pour un signe composé sans dessin propre : ceux de ses composants. */
+  protected componentGlyphs(sign: UserSign | undefined): UserSign[] {
+    return sign?.components?.length ? leafSigns(sign, this.signs()).filter((s) => !!s.glyph) : [];
   }
 
   // --- Éléments

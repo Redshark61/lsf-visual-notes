@@ -92,13 +92,20 @@ export class DictionaryComponent {
   }
 
   protected async remove(sign: UserSign): Promise<void> {
-    const uses = await this.storage.countNotesUsing(sign.id);
-    const warning = uses
-      ? `\n\nIl est utilisé dans ${uses} note${uses > 1 ? 's' : ''}, où il apparaîtra comme « signe supprimé ».`
-      : '';
+    const [uses, composites] = await Promise.all([
+      this.storage.countNotesUsing(sign.id),
+      this.storage.countCompositesUsing(sign.id),
+    ]);
+    const warning =
+      (uses
+        ? `\n\nIl est utilisé dans ${uses} note${uses > 1 ? 's' : ''}, où il apparaîtra comme « signe supprimé ».`
+        : '') +
+      (composites
+        ? `\n\nIl compose ${composites} autre${composites > 1 ? 's' : ''} signe${composites > 1 ? 's' : ''} : il en sera retiré.`
+        : '');
     if (!confirm(`Supprimer « ${sign.word} » du dictionnaire ?${warning}`)) return;
     await this.storage.deleteSign(sign.id);
     this.detail.set(null);
-    this.signs.update((list) => (list ?? []).filter((s) => s.id !== sign.id));
+    this.reload(); // les signes composés qui l'utilisaient ont changé
   }
 }

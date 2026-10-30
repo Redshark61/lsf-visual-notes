@@ -13,7 +13,16 @@
   @if (sign?.glyph) {
     <svg class="glyph" aria-hidden="true"><use [attr.href]="'#glyph-' + sign.id" /></svg>
   } @else {
-    <span class="glyph word-only" aria-hidden="true">{{ sign?.word ?? '?' }}</span>
+    @let parts = componentGlyphs(sign);
+    @if (parts.length) {
+      <span class="compound" aria-hidden="true">
+        @for (c of parts; track $index) {
+          <svg class="glyph small"><use [attr.href]="'#glyph-' + c.id" /></svg>
+        }
+      </span>
+    } @else {
+      <span class="glyph word-only" aria-hidden="true">{{ sign?.word ?? '?' }}</span>
+    }
   }
 </ng-template>
 
@@ -61,8 +70,14 @@
           </button>
         }
       </div>
+      <button type="button" class="danger" (click)="removeElement()" [disabled]="!hasElements()">
+        {{ selectedId() ? 'Supprimer le signe sélectionné' : 'Supprimer le dernier signe' }}
+      </button>
     </div>
 
+    <!-- Un seul écran en deux zones jointives : la note (haut) et la zone d'écriture (bas). -->
+    <div class="screen">
+      <div class="view">
     @if (isMap()) {
       <app-mind-map
         class="map"
@@ -109,10 +124,85 @@
           } @else {
             Écrivez un mot ci-dessous pour insérer le signe correspondant.
           }
+          <br /><small>Dictionnaire vide ou incomplet ? <a routerLink="/atelier">Ajoutez des signes dans l'Atelier</a>.</small>
         </p>
       }
     </div>
     }
+      </div>
+
+      <div class="writing">
+        <div class="writing-bar">
+          <div class="segmented" role="radiogroup" aria-label="Mode de saisie">
+            <button type="button" role="radio" [attr.aria-checked]="inputMode() === 'draw'" (click)="setInputMode('draw')">
+              Dessiner
+            </button>
+            <button type="button" role="radio" [attr.aria-checked]="inputMode() === 'type'" (click)="setInputMode('type')">
+              Écrire
+            </button>
+          </div>
+          @if (inputMode() === 'draw') {
+            <span class="spacer"></span>
+            <button type="button" (click)="undoStroke()" [disabled]="!drawnStrokes()" title="Ctrl+Z">Annuler le trait</button>
+            <button type="button" (click)="discardDrawing()" [disabled]="!drawnStrokes()">Effacer</button>
+          }
+        </div>
+
+        @if (error(); as e) {
+          <p class="error" role="alert">{{ e }}</p>
+        }
+
+        @if (inputMode() === 'type') {
+          <div class="typing">
+            <app-word-entry [signs]="allSigns()" (pick)="insert($event)" (create)="createFromWord($event)" />
+          </div>
+        } @else {
+          @if (proposal(); as p) {
+            <div class="proposal" role="status">
+              @switch (p.kind) {
+                @case ('corrections') {
+                  @if (alternatives(p); as alts) {
+                    @if (alts.length) {
+                      <span class="label">Plutôt :</span>
+                      @for (c of alts; track c.sign.id) {
+                        <button type="button" class="candidate small" (click)="correct(p.elementId, c.sign.id)">
+                          <ng-container *ngTemplateOutlet="glyph; context: { $implicit: c.sign }" />
+                          <span>{{ c.sign.word }}</span>
+                        </button>
+                      }
+                    }
+                  }
+                  <button type="button" class="link" (click)="undoAutoInsert()">Annuler et rétablir le dessin</button>
+                }
+                @case ('suggestions') {
+                  <span class="label">Vouliez-vous dire :</span>
+                  @for (c of p.candidates; track c.sign.id) {
+                    <button type="button" class="candidate" (click)="chooseSuggestion(c.sign.id)">
+                      <ng-container *ngTemplateOutlet="glyph; context: { $implicit: c.sign }" />
+                      <span>{{ c.sign.word }}</span>
+                      <small>{{ c.score | percent }}</small>
+                    </button>
+                  }
+                  <button type="button" (click)="createFromDrawing(p.strokes)">Créer un nouveau signe à partir de ce dessin</button>
+                  <button type="button" class="link" (click)="discardDrawing()">Effacer le dessin</button>
+                }
+                @case ('none') {
+                  <span class="label">Aucun signe reconnu.</span>
+                  <button type="button" (click)="createFromDrawing(p.strokes)">Créer un nouveau signe à partir de ce dessin</button>
+                  <button type="button" class="link" (click)="discardDrawing()">Effacer le dessin</button>
+                }
+              }
+            </div>
+          } @else if (recognizing()) {
+            <div class="proposal muted" role="status">Reconnaissance…</div>
+          }
+          <!-- Pas de cadre : la zone de dessin occupe toute la moitié basse de l'écran. -->
+          <div class="canvas-area">
+            <app-smart-canvas (strokeStart)="onStrokeStart()" (strokesChange)="onStrokesChange($event)" />
+          </div>
+        }
+      </div>
+    </div>
 
     @if (bubble(); as b) {
       @let sign = selectedSign();
@@ -125,6 +215,9 @@
         [attr.aria-label]="sign?.word ?? 'Signe supprimé'"
       >
         <strong class="word">{{ sign?.word ?? 'Signe supprimé' }}</strong>
+        @if (selectedComposition(); as composition) {
+          <small class="composition">= {{ composition }}</small>
+        }
         <div class="bubble-actions">
           @if (sign) {
             <button type="button" (click)="openDetail(sign)">Voir la définition</button>
@@ -133,85 +226,7 @@
         </div>
       </div>
     }
-
-    <div class="page-actions">
-      <button type="button" (click)="removeElement()" [disabled]="!hasElements()">
-        {{ selectedId() ? 'Supprimer le signe sélectionné' : 'Supprimer le dernier signe' }}
-      </button>
-    </div>
   }
-
-  <div class="input-zone">
-    <div class="segmented" role="radiogroup" aria-label="Mode de saisie">
-      <button type="button" role="radio" [attr.aria-checked]="inputMode() === 'draw'" (click)="setInputMode('draw')">
-        Dessiner
-      </button>
-      <button type="button" role="radio" [attr.aria-checked]="inputMode() === 'type'" (click)="setInputMode('type')">
-        Écrire
-      </button>
-    </div>
-
-    @if (inputMode() === 'type') {
-      <app-word-entry
-        [signs]="allSigns()"
-        (pick)="insert($event)"
-        (create)="createFromWord($event)"
-      />
-    } @else {
-    @if (proposal(); as p) {
-      <div class="proposal" role="status">
-        @switch (p.kind) {
-          @case ('corrections') {
-            @if (alternatives(p); as alts) {
-              @if (alts.length) {
-                <span class="label">Plutôt :</span>
-                @for (c of alts; track c.sign.id) {
-                  <button type="button" class="candidate small" (click)="correct(p.elementId, c.sign.id)">
-                    <ng-container *ngTemplateOutlet="glyph; context: { $implicit: c.sign }" />
-                    <span>{{ c.sign.word }}</span>
-                  </button>
-                }
-              }
-            }
-            <button type="button" class="link" (click)="undoAutoInsert()">Annuler et rétablir le dessin</button>
-          }
-          @case ('suggestions') {
-            <span class="label">Vouliez-vous dire :</span>
-            @for (c of p.candidates; track c.sign.id) {
-              <button type="button" class="candidate" (click)="chooseSuggestion(c.sign.id)">
-                <ng-container *ngTemplateOutlet="glyph; context: { $implicit: c.sign }" />
-                <span>{{ c.sign.word }}</span>
-                <small>{{ c.score | percent }}</small>
-              </button>
-            }
-            <button type="button" (click)="createFromDrawing(p.strokes)">Créer un nouveau signe à partir de ce dessin</button>
-            <button type="button" class="link" (click)="discardDrawing()">Effacer le dessin</button>
-          }
-          @case ('none') {
-            <span class="label">Aucun signe reconnu.</span>
-            <button type="button" (click)="createFromDrawing(p.strokes)">Créer un nouveau signe à partir de ce dessin</button>
-            <button type="button" class="link" (click)="discardDrawing()">Effacer le dessin</button>
-          }
-        }
-      </div>
-    } @else if (recognizing()) {
-      <div class="proposal muted" role="status">Reconnaissance…</div>
-    }
-
-    @if (error(); as e) {
-      <p class="error" role="alert">{{ e }}</p>
-    }
-
-    <app-smart-canvas class="pad" (strokeStart)="onStrokeStart()" (strokesChange)="onStrokesChange($event)" />
-    <div class="canvas-actions">
-      <button type="button" (click)="undoStroke()" [disabled]="!drawnStrokes()" title="Ctrl+Z">Annuler le trait</button>
-      <button type="button" (click)="discardDrawing()" [disabled]="!drawnStrokes()">Effacer</button>
-    </div>
-    }
-    <p class="hint">
-      Votre dictionnaire est vide ou incomplet ? <a routerLink="/atelier">Ajoutez des signes dans l'Atelier</a>.
-    </p>
-  </div>
 </section>
 
 <app-sign-dialog [sign]="detail()" (closed)="detail.set(null)" />

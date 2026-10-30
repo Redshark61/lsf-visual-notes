@@ -6,10 +6,11 @@ export const BACKUP_FORMAT = 'lsf-visual-notes';
  * v2 : configurations photographiées (customHandshapes).
  * v3 : HandSpec par main (suites de configurations, plusieurs mouvements et directions).
  * v4 : vidéos des signes (facultatives : exportables sans les vidéos).
+ * v5 : signes composés (champ `components`).
  * Les fichiers v1 et v2 restent lisibles (convertis à l'import).
  */
-export const BACKUP_VERSION = 4;
-export const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2, 3, 4];
+export const BACKUP_VERSION = 5;
+export const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2, 3, 4, 5];
 
 /** Vidéo d'un signe dans un fichier de sauvegarde (data URL base64). */
 export interface BackupVideo {

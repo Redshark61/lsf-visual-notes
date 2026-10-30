@@ -4,7 +4,9 @@ import { CUSTOM_HANDSHAPE_ID_PATTERN, Catalog } from './catalog.model';
 import { BACKUP_FORMAT, BACKUP_VERSION, Backup, SUPPORTED_BACKUP_VERSIONS } from './backup.model';
 import { SUPPORTED_POINT_COUNTS, MAX_BOUNDING_BOX_RATIO } from '../utils/gesture-geometry';
 import { isSignV2, migrateSignV2 } from '../db/migrations';
+import { findCompositionCycle } from '../utils/composition';
 import {
+  MAX_COMPONENTS,
   MAX_HANDSHAPE_SEQUENCE,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_DURATION_MS,
@@ -112,6 +114,7 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
       locationZoneIds: z.array(known(zones, 'Emplacement')).check(z.maxLength(zones.size)),
     }),
     glyph: z.optional(glyph),
+    components: z.optional(z.array(id).check(z.maxLength(MAX_COMPONENTS))),
     video: z.optional(
       z.strictObject({
         mimeType: videoMime,
@@ -202,6 +205,16 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
     .check(
       z.superRefine((backup, ctx) => {
         const signIds = new Set(backup.signs.map((s) => s.id));
+        backup.signs.forEach((s, i) => {
+          if (s.components?.includes(s.id)) {
+            ctx.addIssue({ code: 'custom', path: ['signs', i, 'components'], message: 'Un signe ne peut pas se contenir lui-même', input: s.id });
+          }
+        });
+        const cycle = findCompositionCycle(backup.signs);
+        if (cycle) {
+          const index = backup.signs.findIndex((s) => s.id === cycle);
+          ctx.addIssue({ code: 'custom', path: ['signs', index, 'components'], message: 'Boucle de composition entre signes', input: cycle });
+        }
         backup.videos?.forEach((v, i) => {
           if (!signIds.has(v.signId)) {
             ctx.addIssue({ code: 'custom', path: ['videos', i, 'signId'], message: 'Vidéo sans signe correspondant', input: v.signId });

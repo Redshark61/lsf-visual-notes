@@ -59,6 +59,9 @@ export interface SignAnatomy {
   locationZoneIds: string[];
 }
 
+/** Nombre maximal de signes composant un signe composé. */
+export const MAX_COMPONENTS = 6;
+
 /** Formats vidéo acceptés (MP4/H.264 lisible partout, WebM en repli). */
 export const VIDEO_MIME_TYPES = ['video/mp4', 'video/webm'] as const;
 export type VideoMimeType = (typeof VIDEO_MIME_TYPES)[number];
@@ -90,6 +93,11 @@ export interface UserSign {
   glyph?: SignGlyph;
   /** Présente si une vidéo est enregistrée pour ce signe. */
   video?: SignVideoInfo;
+  /**
+   * Signe composé : ids des signes qui le composent, dans l'ordre (ex. « bienveillance » =
+   * « attention » + « prendre soin »). Jamais de boucle (un signe ne se contient pas, même indirectement).
+   */
+  components?: string[];
   note?: string;
   createdAt: number;
   updatedAt: number;

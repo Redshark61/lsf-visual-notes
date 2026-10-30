@@ -4,7 +4,7 @@
   role="combobox"
   autocomplete="off"
   enterkeyhint="send"
-  placeholder="Tapez un mot…"
+  [placeholder]="placeholder()"
   aria-label="Mot à insérer"
   aria-autocomplete="list"
   aria-controls="word-options"
@@ -40,6 +40,8 @@
 } @else if (trimmed()) {
   <p class="no-match">
     Aucun signe « {{ trimmed() }} » dans votre dictionnaire.
-    <button type="button" (click)="create.emit(trimmed())">Créer le signe « {{ trimmed() }} »</button>
+    @if (allowCreate()) {
+      <button type="button" (click)="create.emit(trimmed())">Créer le signe « {{ trimmed() }} »</button>
+    }
   </p>
 }

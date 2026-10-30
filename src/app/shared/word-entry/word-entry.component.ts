@@ -38,6 +38,9 @@ export class WordEntryComponent {
   readonly pick = output<string>();
   /** Aucun signe ne correspond : l'utilisateur veut créer ce mot. */
   readonly create = output<string>();
+  /** Propose « Créer le signe » quand rien ne correspond (inutile pour choisir un composant). */
+  readonly allowCreate = input(true);
+  readonly placeholder = input('Tapez un mot…');
 
   private readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('input');
 
@@ -88,7 +91,7 @@ export class WordEntryComponent {
         event.preventDefault();
         const sign = this.matches()[this.activeIndex()];
         if (sign) this.choose(sign.id);
-        else if (this.trimmed()) this.create.emit(this.trimmed());
+        else if (this.trimmed() && this.allowCreate()) this.create.emit(this.trimmed());
         break;
       }
       case 'Escape':

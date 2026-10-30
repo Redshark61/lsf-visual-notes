@@ -153,6 +153,21 @@ describe('parseBackup', () => {
     expect(parse((b) => void (b.signs[1].anatomy.nonDominant = { handshapeIds: [], movementIds: [], directionIds: [], orientationId: 'orient_palm_up' })).ok).toBe(true);
   });
 
+  it('accepte un signe composé (« bienveillance » = « attention » + « prendre soin »)', () => {
+    const r = parse((b) => void (b.signs[0].components = [b.signs[1].id, b.signs[2].id]));
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+    expect(r.ok && r.backup.signs[0].components).toHaveLength(2);
+  });
+
+  it('accepte un composé de composés, et un composant absent du fichier (signe local)', () => {
+    expect(parse((b) => { b.signs[0].components = [b.signs[1].id]; b.signs[1].components = [b.signs[2].id]; }).ok).toBe(true);
+    expect(parse((b) => void (b.signs[0].components = [randomUUID()])).ok).toBe(true);
+  });
+
+  it("accepte les sauvegardes v4 (sans signes composés)", () => {
+    expect(parse((b) => void (b.version = 4)).ok).toBe(true);
+  });
+
   it("accepte la couleur d'affichage d'un glyphe (globale ou par trait)", () => {
     expect(parse((b) => void (b.signs[1].glyph.color = '#e0a100')).ok).toBe(true);
     expect(parse((b) => void (b.signs[1].glyph.strokes[0].color = '#c62828')).ok).toBe(true);
@@ -171,7 +186,7 @@ describe('parseBackup', () => {
   it.each<[string, (b: any) => void | string, RegExp?]>([
     ['JSON invalide', () => '{oops', /JSON valide/],
     ['autre format', (b) => void (b.format = 'autre')],
-    ['version future', (b) => void (b.version = 5), /Version/],
+    ['version future', (b) => void (b.version = 6), /Version/],
     ['configuration inconnue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = ['hand_inventee']), /signs\[1\]\.anatomy\.dominant\.handshapeIds\[0\]/],
     ['config perso absente', (b) => void (b.customHandshapes = []), /Configuration personnelle absente/],
     ['suite de configurations trop longue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = Array(6).fill('hand_a'))],
@@ -191,6 +206,11 @@ describe('parseBackup', () => {
     ['vidéo trop lourde', (b) => void (b.videos = [{ signId: b.signs[0].id, mimeType: 'video/mp4', durationMs: 1000, data: 'data:video/mp4;base64,' + 'A'.repeat(4_300_000) }])],
     ['deux vidéos pour un signe', (b) => void (b.videos = [0, 1].map(() => ({ signId: b.signs[0].id, mimeType: 'video/webm', durationMs: 1000, data: 'data:video/webm;base64,AAAA' }))), /même signe/],
     ['fiche vidéo trop longue', (b) => void (b.signs[0].video = { mimeType: 'video/mp4', durationMs: 60_000, bytes: 10 })],
+    ['signe composé de lui-même', (b) => void (b.signs[0].components = [b.signs[0].id]), /se contenir/],
+    ['boucle de composition entre deux signes', (b) => { b.signs[0].components = [b.signs[1].id]; b.signs[1].components = [b.signs[0].id]; }, /Boucle de composition/],
+    ['boucle de composition entre trois signes', (b) => { b.signs[0].components = [b.signs[1].id]; b.signs[1].components = [b.signs[2].id]; b.signs[2].components = [b.signs[0].id]; }, /Boucle/],
+    ['trop de composants', (b) => void (b.signs[0].components = Array.from({ length: 7 }, () => b.signs[1].id))],
+    ['composant qui n\'est pas un identifiant', (b) => void (b.signs[0].components = ['../../x'])],
     ['couleur de trait piégée', (b) => void (b.signs[1].glyph.strokes[0].color = 'url(javascript:alert(1))')],
     ['balise dans un trait', (b) => void (b.signs[1].glyph.strokes[0].d = 'M0,0 Z"/><script>')],
     ['nombre de traits incohérent', (b) => void b.signs[1].glyph.strokes.push({ d: 'M0,0 Z' }), /Un tracé par trait/],

@@ -8,6 +8,7 @@ import { normalizeHand } from '../utils/hand-spec';
 import { TagCount, normalizeTags, tallyTags } from '../utils/tags';
 import { CatalogService } from './catalog.service';
 import {
+  MAX_COMPONENTS,
   NoteElement,
   NotePage,
   SignVideo,
@@ -36,6 +37,8 @@ export interface SignDraft {
   note?: string;
   /** Nouvelle vidéo ; null = supprimer la vidéo existante ; absent = ne pas y toucher. */
   video?: VideoDraft | null;
+  /** Signes composants (signe composé), dans l'ordre. Absent ou vide = signe simple. */
+  components?: string[];
 }
 
 export interface VideoDraft {
@@ -88,6 +91,7 @@ function buildSign(draft: SignDraft, meta: Pick<UserSign, 'id' | 'createdAt' | '
   const dominant = normalizeHand(draft.anatomy.dominant);
   const nonDominant = normalizeHand(draft.anatomy.nonDominant);
   const note = draft.note?.trim().slice(0, MAX_NOTE_LENGTH);
+  const components = (draft.components ?? []).filter(Boolean).slice(0, MAX_COMPONENTS);
   return {
     id: meta.id,
     word,
@@ -99,6 +103,7 @@ function buildSign(draft: SignDraft, meta: Pick<UserSign, 'id' | 'createdAt' | '
     },
     ...(draft.glyph ? { glyph: draft.glyph } : {}),
     ...(note ? { note } : {}),
+    ...(components.length ? { components } : {}),
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
   };
@@ -131,6 +136,7 @@ export class StorageService {
   async createSign(draft: SignDraft): Promise<UserSign> {
     const now = Date.now();
     const sign = withVideo(buildSign(draft, { id: crypto.randomUUID(), createdAt: now, updatedAt: now }), draft.video);
+    await this.assertValidComponents(sign.id, sign.components);
     await db.transaction('rw', db.signs, db.videos, async () => {
       await db.signs.add(sign);
       if (draft.video) await db.videos.put(toVideoRow(sign.id, draft.video));
@@ -144,6 +150,7 @@ export class StorageService {
     const existing = await db.signs.get(id);
     if (!existing) throw new Error('Ce signe n\'existe plus');
     const built = buildSign(draft, { id, createdAt: existing.createdAt, updatedAt: Date.now() });
+    await this.assertValidComponents(id, built.components);
     const sign =
       draft.video === undefined ? (existing.video ? { ...built, video: existing.video } : built) : withVideo(built, draft.video);
     await db.transaction('rw', db.signs, db.videos, async () => {
@@ -153,6 +160,27 @@ export class StorageService {
     });
     this.recognition.invalidate();
     return sign;
+  }
+
+  /** Les composants existent et ne forment aucune boucle avec le signe. */
+  private async assertValidComponents(signId: string, components: string[] | undefined): Promise<void> {
+    if (!components?.length) return;
+    const found = await db.signs.bulkGet(components);
+    if (found.some((s) => !s)) throw new Error("Un des signes composants n'existe plus");
+    // Parcours des composants (et de leurs composants…) à la recherche du signe lui-même.
+    const seen = new Set<string>();
+    let frontier = components;
+    while (frontier.length) {
+      if (frontier.includes(signId)) throw new Error('Un signe ne peut pas se contenir lui-même (boucle de composition)');
+      frontier.forEach((id) => seen.add(id));
+      const next = (await db.signs.bulkGet(frontier)).flatMap((s) => s?.components ?? []);
+      frontier = [...new Set(next)].filter((id) => !seen.has(id));
+    }
+  }
+
+  /** Nombre d'autres signes dont ce signe est un composant. */
+  countCompositesUsing(signId: string): Promise<number> {
+    return db.signs.filter((s) => !!s.components?.includes(signId)).count();
   }
 
   getVideo(signId: string): Promise<SignVideo | undefined> {
@@ -330,8 +358,19 @@ export class StorageService {
     return report;
   }
 
+  /** Supprime le signe, sa vidéo, et le retire des signes composés qui l'utilisaient. */
   async deleteSign(id: string): Promise<void> {
-    await db.transaction('rw', db.signs, db.videos, () => Promise.all([db.signs.delete(id), db.videos.delete(id)]));
+    await db.transaction('rw', db.signs, db.videos, async () => {
+      const users = await db.signs.filter((s) => !!s.components?.includes(id)).toArray();
+      await db.signs.bulkPut(
+        users.map((s) => {
+          const { components: _before, ...rest } = s;
+          const remaining = (s.components ?? []).filter((c) => c !== id);
+          return { ...rest, ...(remaining.length ? { components: remaining } : {}), updatedAt: Date.now() };
+        }),
+      );
+      await Promise.all([db.signs.delete(id), db.videos.delete(id)]);
+    });
     this.recognition.invalidate();
   }
 }

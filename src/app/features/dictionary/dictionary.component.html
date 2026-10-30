@@ -66,6 +66,9 @@
                 <span class="glyph none" aria-hidden="true">sans dessin</span>
               }
               <span class="word">{{ s.word }}</span>
+              @if (s.components?.length) {
+                <span class="badge">composé</span>
+              }
               @if (s.video) {
                 <span class="badge">▶ vidéo</span>
               }

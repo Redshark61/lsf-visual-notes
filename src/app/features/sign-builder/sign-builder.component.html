@@ -71,6 +71,44 @@
           </label>
         }
 
+        @case ('components') {
+          <p class="hint">
+            Un signe peut être composé d'autres signes de votre dictionnaire. Exemple : « bienveillance » =
+            « attention » + « prendre soin ». Passez cette étape pour un signe simple.
+          </p>
+          @if (componentSigns().length) {
+            <ol class="components" aria-label="Signes composants, dans l'ordre">
+              @for (c of componentSigns(); track $index; let i = $index; let first = $first; let last = $last) {
+                <li>
+                  @if (c.sign?.glyph; as g) {
+                    <svg class="glyph" [attr.viewBox]="viewBox" aria-hidden="true">@for (p of g | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}</svg>
+                  }
+                  <span class="name">{{ c.sign?.word ?? 'Signe supprimé' }}</span>
+                  <button type="button" [disabled]="first" (click)="moveComponent(i, -1)" [attr.aria-label]="'Déplacer ' + (c.sign?.word ?? 'ce signe') + ' avant'">←</button>
+                  <button type="button" [disabled]="last" (click)="moveComponent(i, 1)" [attr.aria-label]="'Déplacer ' + (c.sign?.word ?? 'ce signe') + ' après'">→</button>
+                  <button type="button" class="danger" (click)="removeComponent(i)" [attr.aria-label]="'Retirer ' + (c.sign?.word ?? 'ce signe')">×</button>
+                </li>
+              }
+            </ol>
+            <p class="info" role="status">
+              <strong>{{ word() || 'Ce signe' }}</strong> = {{ compositionText() }}
+              @if (componentSigns().length < 2) {
+                <br /><small>Ajoutez un deuxième signe pour former un signe composé.</small>
+              }
+            </p>
+          }
+          @if (componentSigns().length < maxComponents) {
+            <app-word-entry
+              [signs]="composable()"
+              [allowCreate]="false"
+              placeholder="Chercher un signe à ajouter…"
+              (pick)="addComponent($event)"
+            />
+          } @else {
+            <p class="info">Maximum de {{ maxComponents }} signes atteint.</p>
+          }
+        }
+
         @case ('dominant') {
           @if (catalog.catalog()) {
             <app-hand-editor [(hand)]="dominant" />
@@ -137,6 +175,11 @@
             <dt>Nom</dt>
             <dd>
               {{ word() }} <button type="button" class="link" (click)="goTo(stepIndexOf.word)">Modifier</button>
+            </dd>
+            <dt>Composition</dt>
+            <dd>
+              {{ components().length ? compositionText() : 'Aucune (signe simple)' }}
+              <button type="button" class="link" (click)="goTo(stepIndexOf.components)">Modifier</button>
             </dd>
             <dt>Main dominante</dt>
             <dd>

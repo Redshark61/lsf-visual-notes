@@ -25,6 +25,8 @@ export class SignDetailComponent {
   /** Vidéo chargée à la demande (table séparée). */
   protected readonly video = signal<Blob | null>(null);
   protected readonly shareError = signal<string | null>(null);
+  /** Signes qui composent ce signe (signe composé), dans l'ordre. */
+  protected readonly parts = signal<UserSign[]>([]);
 
   protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
   protected readonly hands = computed(() => {
@@ -56,6 +58,13 @@ export class SignDetailComponent {
       const sign = this.sign();
       this.video.set(null);
       this.shareError.set(null);
+      this.parts.set([]);
+      const ids = sign.components ?? [];
+      if (ids.length) {
+        this.storage.getSigns(ids).then((found) => {
+          if (this.sign().id === sign.id) this.parts.set(ids.flatMap((id) => found.get(id) ?? []));
+        });
+      }
       if (sign.video) {
         this.storage.getVideo(sign.id).then((v) => {
           if (this.sign().id === sign.id) this.video.set(v?.blob ?? null);

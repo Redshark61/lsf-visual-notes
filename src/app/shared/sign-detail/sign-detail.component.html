@@ -15,6 +15,22 @@
     </div>
   </header>
 
+  @if (parts().length) {
+    <section>
+      <h3>Signe composé de</h3>
+      <ol class="parts">
+        @for (c of parts(); track $index) {
+          <li>
+            @if (c.glyph; as g) {
+              <svg class="part-glyph" [attr.viewBox]="viewBox" aria-hidden="true">@for (p of g | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}</svg>
+            }
+            <span>{{ c.word }}</span>
+          </li>
+        }
+      </ol>
+    </section>
+  }
+
   @if (video(); as v) {
     <section class="video">
       <app-blob-video [blob]="v" [label]="'Vidéo du signe ' + sign().word" />

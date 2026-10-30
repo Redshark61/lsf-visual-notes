@@ -1,5 +1,5 @@
 /** Outils du plateau. */
-export type BoardTool = 'select' | 'draw' | 'text' | 'sign';
+export type BoardTool = 'select' | 'draw' | 'text' | 'sign' | 'erase';
 
 /**
  * Que fait un doigt sur le plateau ?
@@ -9,7 +9,7 @@ export type BoardTool = 'select' | 'draw' | 'text' | 'sign';
  */
 export type TouchDrawing = 'auto' | 'draw' | 'pan';
 
-export type PointerAction = 'draw' | 'pan' | 'select' | 'text' | 'place' | 'ignore';
+export type PointerAction = 'draw' | 'erase' | 'pan' | 'select' | 'text' | 'place' | 'ignore';
 
 export function fingerDraws(setting: TouchDrawing, penDetected: boolean): boolean {
   return setting === 'draw' || (setting === 'auto' && !penDetected);
@@ -41,9 +41,12 @@ export function decidePointerAction(c: PointerContext): PointerAction {
     case 'text':
       return 'text';
     case 'draw':
-    case 'sign': {
+    case 'sign':
+    case 'erase': {
+      // Même règle que le pinceau : si le doigt ne dessine pas, il déplace (la gomme est un « geste de dessin »).
       const isFinger = c.pointerType === 'touch';
-      return isFinger && !fingerDraws(c.touchDrawing, c.penDetected) ? 'pan' : 'draw';
+      if (isFinger && !fingerDraws(c.touchDrawing, c.penDetected)) return 'pan';
+      return c.tool === 'erase' ? 'erase' : 'draw';
     }
   }
 }

@@ -34,6 +34,7 @@
         <g
           class="obj"
           [class.selected]="o.id === selectedId()"
+          [class.erasing]="erasing().has(o.id)"
           [attr.data-obj]="o.id"
           [attr.data-sign]="o.type === 'sign' ? 'true' : null"
           [attr.transform]="objectTransform(o)"

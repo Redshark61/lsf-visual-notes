@@ -58,8 +58,6 @@
   margin: 0.6rem 0.75rem 0;
   padding: 0.5rem 0.75rem;
   background: #fff3d6;
-  border-radius: 6px;
-  font-size: 0.9rem;
 }
 
 /* Flux linéaire de gauche à droite, retour à la ligne comme du texte. */
@@ -132,6 +130,16 @@
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: 10px;
+}
+
+/* Dessin libre : le plateau occupe exactement le reste de l'écran, la page ne défile jamais (la barre de
+   propositions, en bas du plateau, reste toujours visible). */
+.notebook.canvas {
+  overflow: hidden;
+}
+
+.screen.canvas {
+  min-height: 0;
 }
 
 .view {
@@ -250,16 +258,16 @@ button {
     color: #a12a2a;
   }
 
-  &.link.danger {
-    color: #a12a2a;
-  }
-
   &.link {
     border: none;
     background: none;
     padding: 0.35rem 0.25rem;
     color: var(--color-primary);
     text-decoration: underline;
+  }
+
+  &.link.danger {
+    color: #a12a2a;
   }
 }
 
@@ -340,7 +348,6 @@ button {
 .compound {
   display: inline-flex;
   gap: 0.1rem;
-  padding: 0.1rem;
   border: 1px dashed var(--color-border);
   border-radius: 6px;
 }

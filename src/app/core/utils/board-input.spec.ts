@@ -39,6 +39,14 @@ describe('decidePointerAction', () => {
     }
   });
 
+  it('la gomme suit la règle du pinceau : stylet et souris effacent, le doigt selon le réglage', () => {
+    expect(decidePointerAction(ctx({ tool: 'erase', pointerType: 'pen' }))).toBe('erase');
+    expect(decidePointerAction(ctx({ tool: 'erase', pointerType: 'mouse' }))).toBe('erase');
+    expect(decidePointerAction(ctx({ tool: 'erase' }))).toBe('erase'); // doigt, aucun stylet détecté
+    expect(decidePointerAction(ctx({ tool: 'erase', penDetected: true }))).toBe('pan');
+    expect(decidePointerAction(ctx({ tool: 'erase', penDetected: true, touchDrawing: 'draw' }))).toBe('erase');
+  });
+
   it('l\'outil Signe se comporte comme le pinceau', () => {
     expect(decidePointerAction(ctx({ tool: 'sign', penDetected: true }))).toBe('pan');
     expect(decidePointerAction(ctx({ tool: 'sign', pointerType: 'pen' }))).toBe('draw');

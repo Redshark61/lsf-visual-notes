@@ -74,6 +74,8 @@ const WHEEL_ZOOM_SPEED = 0.0025;
 const ZOOM_STEP = 1.25;
 const SIZE_STEP = 1.25;
 const ARROW_STEP = 8;
+/** Pas (px) entre deux tests d'objet sous la gomme : un geste rapide ne saute pas un trait fin. */
+const ERASE_STEP_PX = 6;
 
 interface Candidate {
   sign: UserSign;
@@ -108,7 +110,9 @@ type Gesture =
   | { kind: 'pan'; pointerId: number; last: Point }
   | { kind: 'stroke'; pointerId: number; pointerType: string; points: Point[]; size: number; tool: 'draw' | 'sign' }
   | { kind: 'drag'; pointerId: number; objectId: string; element: Element; start: Point; startTime: number; moved: boolean }
-  | { kind: 'tap'; pointerId: number; purpose: 'text' | 'place'; objectId: string | null; start: Point; startTime: number };
+  | { kind: 'tap'; pointerId: number; purpose: 'text' | 'place'; objectId: string | null; start: Point; startTime: number }
+  /** Gomme : `last` est en coordonnées de la fenêtre (pour tester les objets entre deux positions). */
+  | { kind: 'erase'; pointerId: number; last: Point };
 
 const distance = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y);
 const midpoint = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
@@ -165,6 +169,8 @@ export class BoardComponent {
   protected readonly liveStroke = signal<{ points: Point[]; size: number } | null>(null);
   protected readonly preview = signal<PreviewStroke[]>([]);
   protected readonly drag = signal<{ id: string; dx: number; dy: number } | null>(null);
+  /** Objets effacés pendant le geste de gomme en cours (supprimés d'un coup au relâchement). */
+  protected readonly erasing = signal<ReadonlySet<string>>(new Set());
   protected readonly editing = signal<EditingText | null>(null);
   protected readonly placingSignId = signal<string | null>(null);
   protected readonly searchOpen = signal(false);
@@ -434,6 +440,10 @@ export class BoardComponent {
         this.liveStroke.set({ points: [world], size: this.penSize() });
         return;
       }
+      case 'erase':
+        this.gesture = { kind: 'erase', pointerId: e.pointerId, last: { x: e.clientX, y: e.clientY } };
+        this.eraseAt(e.clientX, e.clientY);
+        return;
       case 'select':
         if (objectEl && objectId) {
           this.selectedId.set(objectId);
@@ -461,6 +471,7 @@ export class BoardComponent {
   private abortGesture(): void {
     if (this.gesture?.kind === 'stroke') this.liveStroke.set(null);
     if (this.gesture?.kind === 'drag') this.drag.set(null);
+    if (this.gesture?.kind === 'erase') this.erasing.set(new Set());
     this.gesture = null;
   }
 
@@ -501,6 +512,13 @@ export class BoardComponent {
         g.moved = true;
         const zoom = this.currentView().zoom;
         this.drag.set({ id: g.objectId, dx: (p.x - g.start.x) / zoom, dy: (p.y - g.start.y) / zoom });
+        return;
+      }
+      case 'erase': {
+        if (g.pointerId !== e.pointerId) return;
+        const to = { x: e.clientX, y: e.clientY };
+        this.eraseAlong(g.last, to);
+        g.last = to;
         return;
       }
       case 'tap':
@@ -571,9 +589,33 @@ export class BoardComponent {
           else this.startText(world, g.objectId);
         }
         return;
+      case 'erase': {
+        const ids = this.erasing();
+        this.erasing.set(new Set());
+        if (cancelled || !ids.size) return;
+        this.commit(this.working.filter((o) => !ids.has(o.id)));
+        const selected = this.selectedId();
+        if (selected && ids.has(selected)) this.selectedId.set(null);
+        return;
+      }
       case 'pan':
         return;
     }
+  }
+
+  /** Marque pour effacement les objets rencontrés entre deux positions de la gomme. */
+  private eraseAlong(from: Point, to: Point): void {
+    const steps = Math.max(1, Math.ceil(distance(from, to) / ERASE_STEP_PX));
+    for (let i = 1; i <= steps; i++) {
+      this.eraseAt(from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps);
+    }
+  }
+
+  private eraseAt(clientX: number, clientY: number): void {
+    const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-obj]');
+    const id = hit?.getAttribute('data-obj');
+    if (!hit || !id || !this.stage().nativeElement.contains(hit)) return;
+    if (!this.erasing().has(id)) this.erasing.update((ids) => new Set(ids).add(id));
   }
 
   private onWheel(e: WheelEvent): void {

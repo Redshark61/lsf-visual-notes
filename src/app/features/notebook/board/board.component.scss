@@ -12,6 +12,8 @@
   overflow: hidden;
   background: #e9e7df;
   touch-action: none; // tous les gestes (dessin, déplacement, pincement) sont gérés ici
+  overscroll-behavior: none;
+  min-height: 8rem;
   user-select: none;
   -webkit-user-select: none;
   cursor: crosshair;
@@ -22,6 +24,10 @@
 
   &[data-tool='text'] {
     cursor: text;
+  }
+
+  &[data-tool='erase'] {
+    cursor: cell;
   }
 
   &.placing {
@@ -51,6 +57,11 @@
 
 .pending {
   opacity: 0.7;
+}
+
+/* Objet touché par la gomme : estompé jusqu'au relâchement, où il est supprimé. */
+.erasing {
+  opacity: 0.2;
 }
 
 .text {

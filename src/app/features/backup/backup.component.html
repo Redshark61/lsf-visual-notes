@@ -1,5 +1,5 @@
 <section class="backup">
-  <h1>Sauvegarde</h1>
+  <h2>Sauvegarde et restauration</h2>
 
   @if (persisted() === false) {
     <p class="warning">
@@ -9,7 +9,7 @@
   }
 
   <section class="card">
-    <h2>Exporter</h2>
+    <h3>Exporter</h3>
     <p>
       Téléchargez une copie de vos
       @if (counts(); as c) {
@@ -37,7 +37,7 @@
   </section>
 
   <section class="card">
-    <h2>Importer</h2>
+    <h3>Importer</h3>
     <p>Le fichier est entièrement vérifié avant toute modification de vos données.</p>
     <input #file type="file" accept=".json,application/json" (change)="onFile(file)" [disabled]="busy()" />
 

@@ -1,0 +1,208 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #e9e7df;
+  touch-action: none; // tous les gestes (dessin, déplacement, pincement) sont gérés ici
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+
+  &[data-tool='select'] {
+    cursor: default;
+  }
+
+  &[data-tool='text'] {
+    cursor: text;
+  }
+
+  &.placing {
+    cursor: copy;
+  }
+
+  &.panning {
+    cursor: grabbing;
+  }
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: #1d1d1f; // encre par défaut des glyphes (le trait d'un glyphe peut avoir sa propre couleur)
+}
+
+.paper {
+  fill: #fff;
+}
+
+.dot {
+  fill: #dedcd3;
+}
+
+.pending {
+  opacity: 0.7;
+}
+
+.text {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.caption {
+  fill: #5a5a55;
+}
+
+.word-box {
+  fill: #fbfaf6;
+  stroke: #b9b7ac;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Zone de contact élargie : un trait fin ou un texte se touche facilement. */
+.area {
+  fill: transparent;
+}
+
+.hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
+}
+
+.sel {
+  fill: rgb(31 58 95 / 6%);
+  stroke: var(--color-primary);
+  stroke-width: 2px;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.text-editor {
+  position: absolute;
+  z-index: 5;
+  margin: 0;
+  padding: 0;
+  border: 1px dashed var(--color-primary);
+  background: rgb(255 255 255 / 88%);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.25;
+  white-space: pre;
+  overflow: hidden;
+  resize: none;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.dock {
+  position: absolute;
+  inset: auto 0.6rem 0.6rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+}
+
+.bar,
+.panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.45rem 0.7rem;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 18%);
+  font-size: 0.9rem;
+
+  &.muted {
+    opacity: 0.8;
+  }
+
+  &.error {
+    margin: 0;
+    background: #fbe4e4;
+  }
+}
+
+.panel {
+  flex-direction: column;
+  align-items: stretch;
+  width: min(30rem, 100%);
+  max-height: 55%;
+  overflow: auto;
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.find {
+  align-self: flex-start;
+}
+
+.label,
+small {
+  opacity: 0.7;
+}
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+
+  &.danger {
+    color: #a12a2a;
+    border-color: #e3b9b9;
+  }
+
+  &.link {
+    padding: 0.35rem 0.25rem;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    text-decoration: underline;
+  }
+
+  &.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+}
+
+.mini {
+  width: 1.9rem;
+  height: 1.9rem;
+  fill: #1d1d1f;
+}

@@ -25,9 +25,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/notebook/notebook.component').then((m) => m.NotebookComponent),
   },
   {
-    path: 'sauvegarde',
-    title: 'Sauvegarde · LSF Notes',
-    loadComponent: () => import('./features/backup/backup.component').then((m) => m.BackupComponent),
+    path: 'parametres',
+    title: 'Paramètres · LSF Notes',
+    loadComponent: () => import('./features/settings/settings.component').then((m) => m.SettingsComponent),
   },
+  // Ancienne adresse de la page Sauvegarde, désormais dans les Paramètres.
+  { path: 'sauvegarde', redirectTo: 'parametres' },
   { path: '**', redirectTo: 'carnet' },
 ];

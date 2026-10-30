@@ -49,9 +49,17 @@
   gap: 0.5rem;
 }
 
-.map {
+.board {
   flex: 1;
   min-height: 0;
+}
+
+.legacy {
+  margin: 0.6rem 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  background: #fff3d6;
+  border-radius: 6px;
+  font-size: 0.9rem;
 }
 
 /* Flux linéaire de gauche à droite, retour à la ligne comme du texte. */

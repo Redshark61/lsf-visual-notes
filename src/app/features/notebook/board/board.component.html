@@ -1,0 +1,200 @@
+<app-board-toolbar
+  [(tool)]="tool"
+  [(color)]="color"
+  [(penWidth)]="penWidth"
+  [(textSize)]="textSize"
+  [canUndo]="canUndo()"
+  [canRedo]="canRedo()"
+  [zoomPercent]="zoomPercent()"
+  (undo)="undo()"
+  (redo)="redo()"
+  (zoomIn)="zoomBy(1.25)"
+  (zoomOut)="zoomBy(0.8)"
+  (fit)="fit()"
+/>
+
+<div class="stage" #stage [class.panning]="panning()" [class.placing]="!!placingSignId()" [attr.data-tool]="tool()">
+  <svg class="scene" role="img" aria-label="Plateau de dessin libre : encre, signes et texte">
+    <defs>
+      <pattern id="board-dots" width="40" height="40" patternUnits="userSpaceOnUse">
+        <circle cx="2" cy="2" r="1.6" class="dot" />
+      </pattern>
+      @for (s of glyphSigns(); track s.id) {
+        <symbol [attr.id]="'bg-' + s.id" viewBox="0 0 100 100">
+          @for (p of s.glyph! | glyphPaths; track $index) {<path [attr.d]="p.d" [attr.fill]="p.color" />}
+        </symbol>
+      }
+    </defs>
+
+    <g [attr.transform]="transform()">
+      <rect class="paper" [attr.width]="boardWidth" [attr.height]="boardHeight" />
+      <rect [attr.width]="boardWidth" [attr.height]="boardHeight" fill="url(#board-dots)" />
+
+      @for (o of objects(); track o.id) {
+        <g
+          class="obj"
+          [class.selected]="o.id === selectedId()"
+          [attr.data-obj]="o.id"
+          [attr.data-sign]="o.type === 'sign' ? 'true' : null"
+          [attr.transform]="objectTransform(o)"
+        >
+          <g class="content">
+            @switch (o.type) {
+              @case ('ink') {
+                <path class="hit" [attr.d]="o.d" />
+                <path [attr.d]="o.d" [attr.fill]="o.color" />
+              }
+              @case ('text') {
+                @if (editing()?.id !== o.id) {
+                  <rect class="area" [attr.width]="hitBox(o).width" [attr.height]="hitBox(o).height" />
+                  <text class="text" [attr.font-size]="o.size" [attr.fill]="o.color">
+                    @for (line of lines(o.text); track $index; let i = $index) {<tspan x="0" [attr.y]="o.size * (1 + i * 1.25)">{{ line }}</tspan>}
+                  </text>
+                }
+              }
+              @case ('sign') {
+                @if (layouts().get(o.id); as l) {
+                  <rect class="area" [attr.width]="l.width" [attr.height]="l.height" />
+                  @for (t of l.tiles; track $index) {
+                    @if (t.kind === 'glyph') {
+                      <use [attr.href]="'#bg-' + t.glyphSignId" [attr.x]="t.x" [attr.y]="t.y" [attr.width]="t.size" [attr.height]="t.size" />
+                    } @else {
+                      @if (t.boxed) {
+                        <rect class="word-box" [attr.x]="t.x" [attr.y]="t.y" [attr.width]="t.width" [attr.height]="t.height" rx="6" />
+                      }
+                      <text class="text" text-anchor="middle" [attr.x]="t.x + t.width! / 2" [attr.y]="t.y + t.height! * 0.68" [attr.font-size]="t.fontSize">{{ t.word }}</text>
+                    }
+                  }
+                  @if (l.caption; as c) {
+                    <text class="text caption" text-anchor="middle" [attr.x]="c.x" [attr.y]="c.y" [attr.font-size]="c.fontSize">{{ c.text }}</text>
+                  }
+                }
+              }
+            }
+          </g>
+          @if (o.id === selectedId() && selectionBox(); as b) {
+            <rect class="sel" [attr.x]="b.x" [attr.y]="b.y" [attr.width]="b.width" [attr.height]="b.height" rx="6" />
+          }
+        </g>
+      }
+
+      <!-- Dessin en attente de reconnaissance (outil Signe) et trait en cours -->
+      @for (d of previewDs(); track $index) {
+        <path class="pending" [attr.d]="d" [attr.fill]="inkColor()" />
+      }
+      @if (liveD(); as d) {
+        <path [attr.d]="d" [attr.fill]="inkColor()" />
+      }
+    </g>
+  </svg>
+
+  @if (editing(); as e) {
+    @if (editorStyle(); as s) {
+      <textarea
+        #editor
+        class="text-editor"
+        data-ui
+        aria-label="Texte"
+        spellcheck="false"
+        [style.left.px]="s.left"
+        [style.top.px]="s.top"
+        [style.width.px]="s.width"
+        [style.height.px]="s.height"
+        [style.font-size.px]="s.fontSize"
+        [style.color]="s.color"
+        [value]="e.text"
+        (input)="onEditorInput($any($event.target).value)"
+        (keydown)="onEditorKey($event)"
+        (blur)="commitText()"
+      ></textarea>
+    }
+  }
+
+  <div class="dock" data-ui>
+    @if (error(); as message) {
+      <p class="bar error" role="alert">{{ message }}</p>
+    }
+
+    @if (placingSignId()) {
+      <div class="bar" role="status">
+        Touchez le plateau pour poser « {{ placingWord() }} ».
+        <button type="button" (click)="cancelPlacing()">Annuler</button>
+      </div>
+    }
+
+    @if (proposal(); as p) {
+      <div class="bar" role="status">
+        @switch (p.kind) {
+          @case ('auto') {
+            <span>Signe reconnu.</span>
+            @if (p.candidates.length > 1) {
+              <span class="label">Plutôt :</span>
+              @for (c of p.candidates.slice(1); track c.sign.id) {
+                <button type="button" class="chip" (click)="correctAuto(c.sign.id)">
+                  @if (c.sign.glyph) { <svg class="mini" viewBox="0 0 100 100" aria-hidden="true"><use [attr.href]="'#bg-' + c.sign.id" /></svg> }
+                  {{ c.sign.word }}
+                </button>
+              }
+            }
+            <button type="button" (click)="keepAsDrawing()">Garder comme dessin</button>
+            <button type="button" class="link" (click)="proposal.set(null)">OK</button>
+          }
+          @case ('suggestions') {
+            <span class="label">Vouliez-vous dire :</span>
+            @for (c of p.candidates; track c.sign.id) {
+              <button type="button" class="chip" (click)="chooseCandidate(c.sign.id)">
+                @if (c.sign.glyph) { <svg class="mini" viewBox="0 0 100 100" aria-hidden="true"><use [attr.href]="'#bg-' + c.sign.id" /></svg> }
+                {{ c.sign.word }} <small>{{ c.score | percent }}</small>
+              </button>
+            }
+            <button type="button" (click)="createFromDrawing()">Créer un nouveau signe</button>
+            <button type="button" (click)="keepAsDrawing()">Garder comme dessin</button>
+            <button type="button" class="link" (click)="discardPreview()">Effacer</button>
+          }
+          @case ('none') {
+            <span class="label">Aucun signe reconnu.</span>
+            <button type="button" (click)="createFromDrawing()">Créer un nouveau signe</button>
+            <button type="button" (click)="keepAsDrawing()">Garder comme dessin</button>
+            <button type="button" class="link" (click)="discardPreview()">Effacer</button>
+          }
+        }
+      </div>
+    } @else if (recognizing()) {
+      <div class="bar muted" role="status">Reconnaissance…</div>
+    }
+
+    @if (searchOpen()) {
+      <div class="panel">
+        <div class="panel-head">
+          <strong>Chercher un signe à poser</strong>
+          <button type="button" class="link" (click)="searchOpen.set(false)">Fermer</button>
+        </div>
+        <app-word-entry
+          [signs]="dictionary()"
+          placeholder="Tapez un mot…"
+          (pick)="startPlacing($event)"
+          (create)="createSignFromWord.emit($event)"
+        />
+      </div>
+    }
+
+    @if (selectedObject(); as sel) {
+      <div class="bar" role="group" aria-label="Objet sélectionné">
+        <strong>{{ sel.type === 'ink' ? 'Dessin' : sel.type === 'text' ? 'Texte' : 'Signe' }}</strong>
+        @if (sel.type === 'text') {
+          <button type="button" (click)="editSelectedText()">Modifier</button>
+        }
+        @if (sel.type !== 'ink') {
+          <button type="button" (click)="resizeSelected(1 / sizeStep)" aria-label="Plus petit">−</button>
+          <button type="button" (click)="resizeSelected(sizeStep)" aria-label="Plus grand">+</button>
+        }
+        <button type="button" class="danger" (click)="deleteSelected()">Supprimer</button>
+        <button type="button" class="link" (click)="selectedId.set(null)">Fermer</button>
+      </div>
+    }
+
+    @if (tool() === 'sign' && !searchOpen() && !placingSignId() && !proposal() && !selectedObject()) {
+      <button type="button" class="find" (click)="openSearch()">Chercher un signe…</button>
+    }
+  </div>
+</div>

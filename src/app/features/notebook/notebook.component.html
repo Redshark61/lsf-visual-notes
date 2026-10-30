@@ -70,28 +70,35 @@
           </button>
         }
       </div>
-      <button type="button" class="danger" (click)="removeElement()" [disabled]="!hasElements()">
-        {{ selectedId() ? 'Supprimer le signe sélectionné' : 'Supprimer le dernier signe' }}
-      </button>
+      @if (!isCanvas()) {
+        <button type="button" class="danger" (click)="removeElement()" [disabled]="!hasElements()">
+          {{ selectedId() ? 'Supprimer le signe sélectionné' : 'Supprimer le dernier signe' }}
+        </button>
+      }
     </div>
 
     <!-- Un seul écran en deux zones jointives : la note (haut) et la zone d'écriture (bas). -->
     <div class="screen">
+      @if (isCanvas()) {
+        <!-- Dessin libre : tout l'écran est le plateau (ses propres outils). -->
+        <app-board
+          class="board"
+          [noteId]="n.id"
+          [objects]="n.canvas?.objects ?? noObjects"
+          [display]="display()"
+          (objectsChange)="onBoardChange($event)"
+          (signTap)="onBoardSignTap($event)"
+          (createSign)="createFromDrawing($event)"
+          (createSignFromWord)="createFromWord($event)"
+        />
+      } @else {
       <div class="view">
-    @if (isMap()) {
-      <app-mind-map
-        class="map"
-        [map]="n.map ?? { nodes: [], links: [] }"
-        [signs]="signs()"
-        [display]="display()"
-        [(selectedNodeId)]="selectedNodeId"
-        [selectedElementId]="selectedId()"
-        [freshElementId]="lastInsertedId()"
-        (mapChange)="onMapChange($event)"
-        (elementClick)="select($event.elementId, $event.event)"
-        (scrolled)="closeBubble()"
-      />
-    } @else {
+    @if (n.layout === 'map') {
+      <p class="legacy" role="status">
+        Cette note était une carte mentale : cette fonction n'existe plus. Ses données sont conservées mais ne sont plus
+        affichées. Vous pouvez écrire à la suite ci-dessous, ou passer en « Dessin libre ».
+      </p>
+    }
     <div
       class="page"
       [class]="'display-' + display()"
@@ -128,7 +135,6 @@
         </p>
       }
     </div>
-    }
       </div>
 
       <div class="writing">
@@ -202,6 +208,7 @@
           </div>
         }
       </div>
+      }
     </div>
 
     @if (bubble(); as b) {

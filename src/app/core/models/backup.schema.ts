@@ -6,6 +6,17 @@ import { SUPPORTED_POINT_COUNTS, MAX_BOUNDING_BOX_RATIO } from '../utils/gesture
 import { isSignV2, migrateSignV2 } from '../db/migrations';
 import { findCompositionCycle } from '../utils/composition';
 import {
+  BOARD_HEIGHT,
+  BOARD_WIDTH,
+  MAX_BOARD_OBJECTS,
+  MAX_INK_PATH_LENGTH,
+  MAX_SIGN_SCALE,
+  MAX_TEXT_LENGTH,
+  MAX_TEXT_SIZE,
+  MIN_SIGN_SCALE,
+  MIN_TEXT_SIZE,
+} from './board.model';
+import {
   MAX_COMPONENTS,
   MAX_HANDSHAPE_SEQUENCE,
   MAX_VIDEO_BYTES,
@@ -156,11 +167,50 @@ export function backupSchema(catalog: Catalog, existingCustomIds: ReadonlySet<st
       }, 'Lien vers une bulle inexistante'),
     );
 
+  // Plateau de dessin libre : types vérifiés, coordonnées dans le plateau, tailles et nombres plafonnés.
+  const boardX = z.number().check(z.gte(-100), z.lte(BOARD_WIDTH + 100));
+  const boardY = z.number().check(z.gte(-100), z.lte(BOARD_HEIGHT + 100));
+  const boardObject = z.discriminatedUnion('type', [
+    z.strictObject({
+      type: z.literal('ink'),
+      id,
+      x: boardX,
+      y: boardY,
+      w: z.number().check(z.gte(0), z.lte(BOARD_WIDTH + 400)),
+      h: z.number().check(z.gte(0), z.lte(BOARD_HEIGHT + 400)),
+      d: z.string().check(z.maxLength(MAX_INK_PATH_LENGTH), z.regex(SVG_PATH_PATTERN)),
+      color,
+    }),
+    z.strictObject({
+      type: z.literal('sign'),
+      id,
+      x: boardX,
+      y: boardY,
+      signId: id,
+      scale: z.number().check(z.gte(MIN_SIGN_SCALE), z.lte(MAX_SIGN_SCALE)),
+    }),
+    z.strictObject({
+      type: z.literal('text'),
+      id,
+      x: boardX,
+      y: boardY,
+      text: text(1, MAX_TEXT_LENGTH),
+      size: z.number().check(z.gte(MIN_TEXT_SIZE), z.lte(MAX_TEXT_SIZE)),
+      color,
+    }),
+  ]);
+  const canvas = z.strictObject({
+    objects: z
+      .array(boardObject)
+      .check(z.maxLength(MAX_BOARD_OBJECTS), z.refine(unique, "Identifiants d'objets du plateau en double")),
+  });
+
   const note = z.strictObject({
     id,
     title: text(1, 120),
     elements,
-    layout: z.optional(z.union([z.literal('linear'), z.literal('map')])),
+    layout: z.optional(z.union([z.literal('linear'), z.literal('map'), z.literal('canvas')])),
+    canvas: z.optional(canvas),
     map: z.optional(mindMap),
     updatedAt: timestamp,
   });

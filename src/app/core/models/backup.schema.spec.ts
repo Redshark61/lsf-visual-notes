@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { BACKUP_VERSION, parseBackup } from './backup.schema';
 import { catalogSchema } from './catalog.schema';
 import { extractGesture } from '../utils/gesture';
+import { inkFromPoints, signAt } from '../utils/board-scene';
 import { SHAPES } from '../../../testing/shapes';
 
 const root = (p: string) => resolve(process.cwd(), p);
@@ -164,6 +165,40 @@ describe('parseBackup', () => {
     expect(parse((b) => void (b.signs[0].components = [randomUUID()])).ok).toBe(true);
   });
 
+  it('accepte une note en dessin libre (encre, signe, texte)', () => {
+    const r = parse((b) => {
+      b.notes[0].layout = 'canvas';
+      b.notes[0].canvas = { objects: [
+        { type: 'ink', id: randomUUID(), x: 120.5, y: 80, w: 150, h: 60, d: 'M10,10 Q20,20 30,30 T40,40Z', color: '#c62828' },
+        { type: 'sign', id: randomUUID(), x: 500, y: 400, signId: b.signs[0].id, scale: 1.5 },
+        { type: 'text', id: randomUUID(), x: 300, y: 600, text: 'Bonjour\nle monde', size: 36, color: '#1d1d1f' },
+      ] };
+    });
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+  });
+
+  it('accepte ce que le plateau produit réellement (encre, signe posé au centre, signe reconnu)', () => {
+    const points = Array.from({ length: 60 }, (_, i) => ({ x: 300 + i * 4, y: 500 + Math.sin(i / 6) * 40 }));
+    const r = parse((b) => {
+      b.notes[0].layout = 'canvas';
+      b.notes[0].canvas = { objects: [
+        inkFromPoints(points, '#1565c0', 3.3, randomUUID()),
+        inkFromPoints([{ x: 10, y: 10 }], '#1d1d1f', 6, randomUUID()), // simple point
+        signAt(b.signs[0].id, { x: 900, y: 700 }, 1, randomUUID()),
+        signAt(b.signs[1].id, { x: 0, y: 0 }, 2.5, randomUUID()), // coin du plateau
+      ] };
+    });
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+  });
+
+  it('accepte un ancien fichier avec une carte mentale (conservée, non affichée)', () => {
+    expect(parse((b) => void ((b.notes[0].layout = 'map'), (b.notes[0].map = { nodes: [], links: [] }))).ok).toBe(true);
+  });
+
+  it("accepte les sauvegardes v5 (sans plateau)", () => {
+    expect(parse((b) => void (b.version = 5)).ok).toBe(true);
+  });
+
   it("accepte les sauvegardes v4 (sans signes composés)", () => {
     expect(parse((b) => void (b.version = 4)).ok).toBe(true);
   });
@@ -186,7 +221,7 @@ describe('parseBackup', () => {
   it.each<[string, (b: any) => void | string, RegExp?]>([
     ['JSON invalide', () => '{oops', /JSON valide/],
     ['autre format', (b) => void (b.format = 'autre')],
-    ['version future', (b) => void (b.version = 6), /Version/],
+    ['version future', (b) => void (b.version = 7), /Version/],
     ['configuration inconnue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = ['hand_inventee']), /signs\[1\]\.anatomy\.dominant\.handshapeIds\[0\]/],
     ['config perso absente', (b) => void (b.customHandshapes = []), /Configuration personnelle absente/],
     ['suite de configurations trop longue', (b) => void (b.signs[1].anatomy.dominant.handshapeIds = Array(6).fill('hand_a'))],
@@ -206,6 +241,16 @@ describe('parseBackup', () => {
     ['vidéo trop lourde', (b) => void (b.videos = [{ signId: b.signs[0].id, mimeType: 'video/mp4', durationMs: 1000, data: 'data:video/mp4;base64,' + 'A'.repeat(4_300_000) }])],
     ['deux vidéos pour un signe', (b) => void (b.videos = [0, 1].map(() => ({ signId: b.signs[0].id, mimeType: 'video/webm', durationMs: 1000, data: 'data:video/webm;base64,AAAA' }))), /même signe/],
     ['fiche vidéo trop longue', (b) => void (b.signs[0].video = { mimeType: 'video/mp4', durationMs: 60_000, bytes: 10 })],
+    ['objet de plateau de type inconnu', (b) => void (b.notes[0].canvas = { objects: [{ type: 'script', id: randomUUID(), x: 0, y: 0 }] })],
+    ['encre avec balise dans le chemin', (b) => void (b.notes[0].canvas = { objects: [{ type: 'ink', id: randomUUID(), x: 0, y: 0, w: 5, h: 5, d: 'M0,0 Z"/><script>', color: '#000000' }] })],
+    ['encre avec couleur piégée', (b) => void (b.notes[0].canvas = { objects: [{ type: 'ink', id: randomUUID(), x: 0, y: 0, w: 5, h: 5, d: 'M0,0Z', color: 'url(javascript:1)' }] })],
+    ['objet hors du plateau', (b) => void (b.notes[0].canvas = { objects: [{ type: 'text', id: randomUUID(), x: 99999, y: 0, text: 'x', size: 20, color: '#000000' }] })],
+    ['texte vide', (b) => void (b.notes[0].canvas = { objects: [{ type: 'text', id: randomUUID(), x: 0, y: 0, text: '', size: 20, color: '#000000' }] })],
+    ['échelle de signe démesurée', (b) => void (b.notes[0].canvas = { objects: [{ type: 'sign', id: randomUUID(), x: 0, y: 0, signId: randomUUID(), scale: 1000 }] })],
+    ['champ inconnu sur un objet', (b) => void (b.notes[0].canvas = { objects: [{ type: 'sign', id: randomUUID(), x: 0, y: 0, signId: randomUUID(), scale: 1, onclick: 'x' }] })],
+    ['identifiants d\'objets en double', (b) => { const o = { type: 'sign', id: randomUUID(), x: 0, y: 0, signId: randomUUID(), scale: 1 }; b.notes[0].canvas = { objects: [o, { ...o }] }; }, /double/],
+    ['trop d\'objets sur le plateau', (b) => void (b.notes[0].canvas = { objects: Array.from({ length: 3001 }, () => ({ type: 'sign', id: randomUUID(), x: 0, y: 0, signId: randomUUID(), scale: 1 })) })],
+    ['disposition inconnue (grille)', (b) => void (b.notes[0].layout = 'grille')],
     ['signe composé de lui-même', (b) => void (b.signs[0].components = [b.signs[0].id]), /se contenir/],
     ['boucle de composition entre deux signes', (b) => { b.signs[0].components = [b.signs[1].id]; b.signs[1].components = [b.signs[0].id]; }, /Boucle de composition/],
     ['boucle de composition entre trois signes', (b) => { b.signs[0].components = [b.signs[1].id]; b.signs[1].components = [b.signs[2].id]; b.signs[2].components = [b.signs[0].id]; }, /Boucle/],

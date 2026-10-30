@@ -1,0 +1,41 @@
+<section class="settings">
+  <h1>Paramètres</h1>
+
+  <section class="card" aria-labelledby="touch-title">
+    <h2 id="touch-title">Dessin libre : que fait le doigt ?</h2>
+    <p class="hint">
+      Sur le plateau de dessin libre (Carnet → « Dessin libre »), le stylet et la souris dessinent toujours. Deux doigts
+      déplacent et zooment toujours le plateau.
+    </p>
+
+    <fieldset>
+      <legend class="sr-only">Comportement d'un doigt sur le plateau</legend>
+      @for (o of options; track o.value) {
+        <label class="option">
+          <input
+            type="radio"
+            name="touch-drawing"
+            [value]="o.value"
+            [checked]="settings.touchDrawing() === o.value"
+            (change)="settings.setTouchDrawing(o.value)"
+          />
+          <span>
+            <strong>{{ o.title }}</strong><br />
+            <small>{{ o.description }}</small>
+          </span>
+        </label>
+      }
+    </fieldset>
+
+    <p class="status" role="status">
+      @if (settings.penDetected()) {
+        Un stylet a été détecté sur cet appareil.
+        <button type="button" class="link" (click)="settings.resetPenDetected()">Oublier</button>
+      } @else {
+        Aucun stylet détecté pour l'instant : en mode automatique, le doigt dessine.
+      }
+    </p>
+  </section>
+
+  <app-backup />
+</section>

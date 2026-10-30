@@ -17,15 +17,17 @@ import { SmartCanvasComponent } from '../../shared/smart-canvas/smart-canvas.com
 import { SignDialogComponent } from '../../shared/sign-dialog/sign-dialog.component';
 import { WordEntryComponent } from '../../shared/word-entry/word-entry.component';
 import { NoteTitleComponent } from './note-title.component';
-import { MindMapComponent } from './mind-map/mind-map.component';
+import { BoardComponent } from './board/board.component';
 import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
 import { ChainVideoComponent, VideoClip } from '../../shared/chain-video.component';
 import { RecognitionService } from '../../core/services/recognition.service';
 import { MAX_NOTE_TITLE_LENGTH, StorageService } from '../../core/services/storage.service';
 import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
-import { MapNode, MindMap, NoteElement, NotePage, Stroke, UserSign } from '../../core/models/sign.model';
+import { BoardObject } from '../../core/models/board.model';
+import { NoteElement, NotePage, Stroke, UserSign } from '../../core/models/sign.model';
+import { addObject, signAt } from '../../core/utils/board-scene';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
-import { leafSigns, missingComponentIds, videoSigns } from '../../core/utils/composition';
+import { leafSigns, videoSigns } from '../../core/utils/composition';
 
 /** Délai après le lever du stylet, pour laisser le temps de tracer un glyphe en plusieurs traits. */
 const RECOGNITION_DEBOUNCE_MS = 450;
@@ -58,10 +60,8 @@ function readPrefs(): { display: NoteDisplay; inputMode: InputMode } {
   }
 }
 
-/** Tous les éléments de la note, quelle que soit la disposition. */
 function allElements(note: NotePage | null | undefined): NoteElement[] {
-  if (!note) return [];
-  return [...note.elements, ...(note.map?.nodes.flatMap((n) => n.elements) ?? [])];
+  return note?.elements ?? [];
 }
 
 interface Candidate {
@@ -84,7 +84,7 @@ type Proposal =
     SignDialogComponent,
     WordEntryComponent,
     NoteTitleComponent,
-    MindMapComponent,
+    BoardComponent,
     ChainVideoComponent,
     GlyphPathsPipe,
     NgTemplateOutlet,
@@ -92,7 +92,8 @@ type Proposal =
     RouterLink,
   ],
   host: {
-    '(document:click)': 'onDocumentClick($event)',
+    // À l'appui et non au clic : avec la capture du pointeur du plateau, le clic ne vise pas le signe touché.
+    '(document:pointerdown)': 'onDocumentPointerDown($event)',
     '(document:keydown.escape)': 'closeBubble()',
     '(window:resize)': 'closeBubble()',
     '(document:keydown)': 'onKeydown($event)',
@@ -113,7 +114,7 @@ export class NotebookComponent {
   /** Absent en mode écrit. */
   private readonly canvas = viewChild(SmartCanvasComponent);
   private readonly wordEntry = viewChild(WordEntryComponent);
-  private readonly mindMap = viewChild(MindMapComponent);
+  private readonly board = viewChild(BoardComponent);
 
   protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
   protected readonly maxTitleLength = MAX_NOTE_TITLE_LENGTH;
@@ -130,9 +131,11 @@ export class NotebookComponent {
   /** Nombre de traits sur le canevas (boutons « Annuler le trait » / « Effacer »). */
   protected readonly drawnStrokes = signal(0);
   protected readonly selectedId = signal<string | null>(null);
-  /** Carte mentale : bulle qui reçoit les prochains signes. */
-  protected readonly selectedNodeId = signal<string | null>(null);
-  protected readonly isMap = computed(() => this.note()?.layout === 'map');
+  /** Signe touché sur le plateau de dessin libre (sa bulle s'ouvre comme pour un signe de la note). */
+  protected readonly externalSelection = signal<{ signId: string; objectId: string } | null>(null);
+  protected readonly isCanvas = computed(() => this.note()?.layout === 'canvas');
+  /** Plateau vide (référence stable : évite de réinitialiser l'entrée du plateau à chaque rendu). */
+  protected readonly noObjects: BoardObject[] = [];
   protected readonly hasElements = computed(() => allElements(this.note()).length > 0);
   /**
    * Vidéos du signe sélectionné, lancées dans la bulle dès le clic : sa vidéo propre, sinon (signe
@@ -146,6 +149,8 @@ export class NotebookComponent {
   });
   /** Signe de l'élément dont la bulle d'informations est ouverte. */
   protected readonly selectedSign = computed(() => {
+    const external = this.externalSelection();
+    if (external) return this.signs().get(external.signId);
     const element = allElements(this.note()).find((e) => e.id === this.selectedId());
     return element ? this.signs().get(element.signId) : undefined;
   });
@@ -164,9 +169,9 @@ export class NotebookComponent {
     { value: 'both', label: 'Les deux' },
   ];
   protected readonly inputMode = signal<InputMode>(readPrefs().inputMode);
-  protected readonly layoutOptions: { value: 'linear' | 'map'; label: string }[] = [
+  protected readonly layoutOptions: { value: 'linear' | 'canvas'; label: string }[] = [
     { value: 'linear', label: 'Texte' },
-    { value: 'map', label: 'Carte mentale' },
+    { value: 'canvas', label: 'Dessin libre' },
   ];
   /** Tout le dictionnaire, chargé pour la saisie écrite. */
   protected readonly allSigns = signal<UserSign[]>([]);
@@ -253,7 +258,6 @@ export class NotebookComponent {
     this.notes.set(notes);
     this.note.set(note);
     this.closeBubble();
-    this.selectedNodeId.set(null);
     await this.loadSigns(allElements(note).map((e) => e.signId));
 
     // Retour de l'Atelier après « Créer un nouveau signe à partir de ce dessin ».
@@ -304,14 +308,8 @@ export class NotebookComponent {
 
   /** Charge les signes manquants, et leurs composants (un signe composé affiche ceux-ci). */
   private async loadSigns(ids: string[]): Promise<void> {
-    const attempted = new Set<string>();
-    let wanted = ids.filter((id) => !this.signs().has(id));
-    while (wanted.length) {
-      wanted.forEach((id) => attempted.add(id));
-      const found = await this.storage.getSigns(wanted);
-      this.signs.update((m) => new Map([...m, ...found]));
-      wanted = missingComponentIds(found.values(), this.signs()).filter((id) => !attempted.has(id));
-    }
+    const found = await this.storage.loadSignsWithComponents(ids, this.signs());
+    if (found.size) this.signs.update((m) => new Map([...m, ...found]));
   }
 
   /** Le signe a une vidéo, ou (composé) au moins un composant en a une. */
@@ -327,68 +325,35 @@ export class NotebookComponent {
   // --- Éléments
 
   protected insert(signId: string): string {
-    const element: NoteElement = { id: crypto.randomUUID(), signId, orderIndex: 0 };
-    if (this.isMap()) {
-      // Carte mentale : dans la bulle sélectionnée, sinon dans une nouvelle bulle.
-      const map = this.note()!.map ?? { nodes: [], links: [] };
-      let target = map.nodes.find((node) => node.id === this.selectedNodeId());
-      const nodes = target
-        ? map.nodes.map((node) => (node.id === target!.id ? { ...node, elements: [...node.elements, element] } : node))
-        : [
-            ...map.nodes,
-            (target = {
-              id: crypto.randomUUID(),
-              ...(this.mindMap()?.suggestPosition() ?? { x: 40, y: 40 }),
-              elements: [element],
-            }),
-          ];
-      this.update((n) => ({ ...n, map: { ...map, nodes } }));
-      this.selectedNodeId.set(target.id);
-    } else {
-      this.update((n) => ({ ...n, elements: [...n.elements, element] }));
+    if (this.isCanvas()) {
+      // Dessin libre : le signe est posé au centre de la vue (ou à une place par défaut).
+      const object = signAt(signId, this.board()?.viewCenter() ?? { x: 200, y: 200 });
+      this.update((n) => ({ ...n, canvas: { objects: addObject(n.canvas?.objects ?? [], object) } }));
+      return object.id;
     }
+    const element: NoteElement = { id: crypto.randomUUID(), signId, orderIndex: 0 };
+    this.update((n) => ({ ...n, elements: [...n.elements, element] }));
     this.lastInsertedId.set(element.id);
     return element.id;
   }
 
-  /** Applique `change` à toutes les listes d'éléments (texte et bulles de la carte). */
+  /** Applique `change` à la liste d'éléments de la note. */
   private updateElements(change: (elements: NoteElement[]) => NoteElement[]): void {
-    this.update((n) => ({
-      ...n,
-      elements: change(n.elements),
-      ...(n.map
-        ? { map: { ...n.map, nodes: n.map.nodes.map((node) => ({ ...node, elements: change(node.elements) })) } }
-        : {}),
-    }));
+    this.update((n) => ({ ...n, elements: change(n.elements) }));
   }
 
-  protected onMapChange(map: MindMap): void {
-    this.update((n) => ({ ...n, map }));
+  protected onBoardChange(objects: BoardObject[]): void {
+    this.update((n) => ({ ...n, layout: 'canvas', canvas: { objects } }));
   }
 
-  /** Texte ↔ carte mentale. */
-  protected setLayout(layout: 'linear' | 'map'): void {
+  /** Texte ↔ dessin libre : deux contenus distincts, rien n'est converti ni perdu en passant de l'un à l'autre. */
+  protected setLayout(layout: 'linear' | 'canvas'): void {
     const note = this.note();
     if (!note || layout === (note.layout ?? 'linear')) return;
     this.closeBubble();
-    this.selectedNodeId.set(null);
-    if (layout === 'map') {
-      const nodes: MapNode[] = note.elements.length
-        ? [{ id: crypto.randomUUID(), x: 40, y: 40, elements: note.elements }]
-        : [];
-      this.update((n) => ({ ...n, layout: 'map', elements: [], map: { nodes, links: [] } }));
-      if (nodes[0]) this.selectedNodeId.set(nodes[0].id);
-      return;
-    }
-    const map = note.map ?? { nodes: [], links: [] };
-    if (
-      (map.links.length || map.nodes.length > 1) &&
-      !confirm('Repasser en texte ? Les bulles seront mises bout à bout (de haut en bas) et les liens supprimés.')
-    ) {
-      return;
-    }
-    const elements = [...map.nodes].sort((a, b) => a.y - b.y || a.x - b.x).flatMap((node) => node.elements);
-    this.update(({ map: _dropped, ...n }) => ({ ...n, layout: 'linear', elements: [...n.elements, ...elements] }));
+    this.resetRecognition();
+    this.drawnStrokes.set(0);
+    this.update((n) => ({ ...n, layout }));
   }
 
   protected select(id: string, event: MouseEvent): void {
@@ -398,13 +363,30 @@ export class NotebookComponent {
     }
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const sign = this.signs().get(allElements(this.note()).find((e) => e.id === id)?.signId ?? '');
+    this.externalSelection.set(null);
+    this.selectedId.set(id);
+    this.placeBubble(rect, sign);
+  }
+
+  /** Touche d'un signe posé sur le plateau : même bulle (nom, vidéo, définition) que dans la note. */
+  protected async onBoardSignTap(tap: { signId: string; objectId: string; rect: DOMRect }): Promise<void> {
+    if (this.externalSelection()?.objectId === tap.objectId) {
+      this.closeBubble();
+      return;
+    }
+    await this.loadSigns([tap.signId]);
+    this.selectedId.set(null);
+    this.externalSelection.set({ signId: tap.signId, objectId: tap.objectId });
+    this.placeBubble(tap.rect, this.signs().get(tap.signId));
+  }
+
+  private placeBubble(rect: DOMRect, sign: UserSign | undefined): void {
     const withVideo = this.hasVideoContent(sign);
     const height = withVideo ? VIDEO_BUBBLE_HEIGHT : BUBBLE_HEIGHT;
     const spaceBelow = window.innerHeight - rect.bottom;
     // Sous le signe, sauf s'il n'y a pas la place et qu'il y en a davantage au-dessus.
     const above = spaceBelow < height && rect.top > spaceBelow;
     const margin = (withVideo ? VIDEO_BUBBLE_HALF_WIDTH : BUBBLE_HALF_WIDTH) + 8;
-    this.selectedId.set(id);
     this.bubble.set({
       x: Math.min(Math.max(rect.left + rect.width / 2, margin), window.innerWidth - margin),
       y: above ? rect.top - 6 : rect.bottom + 6,
@@ -414,12 +396,14 @@ export class NotebookComponent {
 
   protected closeBubble(): void {
     this.selectedId.set(null);
+    this.externalSelection.set(null);
     this.bubble.set(null);
   }
 
-  protected onDocumentClick(event: MouseEvent): void {
+  protected onDocumentPointerDown(event: Event): void {
     const target = event.target as Element | null;
-    if (this.selectedId() && !target?.closest('.element, .bubble, dialog')) this.closeBubble();
+    const open = this.selectedId() || this.externalSelection();
+    if (open && !target?.closest('.element, .bubble, dialog, [data-sign]')) this.closeBubble();
   }
 
   protected openDetail(sign: UserSign): void {
@@ -429,10 +413,13 @@ export class NotebookComponent {
 
   /** Supprime l'élément sélectionné, à défaut le dernier. */
   protected removeElement(): void {
-    const note = this.note();
-    const elements = this.isMap()
-      ? (note?.map?.nodes.find((node) => node.id === this.selectedNodeId())?.elements ?? [])
-      : (note?.elements ?? []);
+    const external = this.externalSelection();
+    if (external) {
+      this.board()?.deleteObject(external.objectId);
+      this.closeBubble();
+      return;
+    }
+    const elements = this.note()?.elements ?? [];
     const id = this.selectedId() ?? elements.at(-1)?.id;
     if (!id) return;
     this.updateElements((list) => list.filter((e) => e.id !== id));

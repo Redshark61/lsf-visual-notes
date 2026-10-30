@@ -224,6 +224,26 @@ export class StorageService {
     return db.signs.get(id);
   }
 
+  /**
+   * Charge des signes et, de proche en proche, leurs composants (un signe composé affiche ceux-ci).
+   * Renvoie seulement les signes nouvellement chargés (ceux de `known` ne sont pas relus).
+   */
+  async loadSignsWithComponents(
+    ids: readonly string[],
+    known: ReadonlyMap<string, UserSign>,
+  ): Promise<Map<string, UserSign>> {
+    const loaded = new Map<string, UserSign>();
+    const attempted = new Set<string>();
+    let wanted = [...new Set(ids)].filter((id) => !known.has(id));
+    while (wanted.length) {
+      wanted.forEach((id) => attempted.add(id));
+      const found = await this.getSigns(wanted);
+      found.forEach((sign, id) => loaded.set(id, sign));
+      wanted = missingComponentIds(found.values(), new Map([...known, ...loaded])).filter((id) => !attempted.has(id));
+    }
+    return loaded;
+  }
+
   /** Signes trouvés, indexés par id (les ids inconnus sont ignorés). */
   async getSigns(ids: string[]): Promise<Map<string, UserSign>> {
     const unique = [...new Set(ids)];

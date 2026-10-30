@@ -109,7 +109,9 @@ export interface NoteElement {
   orderIndex: number;
 }
 
-/** Dimensions de la surface d'une carte mentale (px CSS). */
+import type { BoardContent } from './board.model';
+
+/** Dimensions de la surface d'une carte mentale (px CSS) — ancienne fonctionnalité, voir NotePage.map. */
 export const MIND_MAP_WIDTH = 2400;
 export const MIND_MAP_HEIGHT = 1600;
 
@@ -139,9 +141,11 @@ export interface NotePage {
   title: string;
   /** Contenu de la disposition « texte » (flux linéaire). */
   elements: NoteElement[];
-  /** Absent = « linear ». */
-  layout?: 'linear' | 'map';
-  /** Contenu de la disposition « carte mentale ». */
+  /** Absent = « linear ». « map » : ancienne carte mentale (supprimée ; ses données sont conservées, non affichées). */
+  layout?: 'linear' | 'map' | 'canvas';
+  /** Contenu de la disposition « dessin libre » (plateau borné d'objets). */
+  canvas?: BoardContent;
+  /** Ancienne carte mentale : plus affichée ni modifiée, conservée telle quelle. */
   map?: MindMap;
   updatedAt: number;
 }

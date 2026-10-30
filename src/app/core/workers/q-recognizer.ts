@@ -30,10 +30,38 @@ export const STRUCTURE_RANGE = 0.15;
 export const STRUCTURE_MAX_PENALTY = 0.6;
 /** Pénalité d'un trait sans équivalent dans l'autre dessin (par unité de longueur relative). */
 const UNMATCHED_STROKE_COST = 0.5;
+/**
+ * Un nombre de traits différent (cercle tracé en deux fois, trait de plus) rend la comparaison de
+ * disposition des traits sans objet : on ne l'applique pas, et on multiplie à la place le score par ce
+ * facteur pour chaque trait d'écart.
+ * Mesuré : avec la pénalité de disposition appliquée dans ce cas, les redessins coupés en deux
+ * tombaient à ~0,35 (7 % des redessins sans aucune suggestion). Sans aucune pénalité, 28 % des
+ * gribouillis hors dictionnaire étaient remplacés ; à 0,75 : 15 %, pour 0,2 point de rappel perdu.
+ */
+export const STROKE_COUNT_MISMATCH_FACTOR = 0.75;
 
-/** Pré-filtrage : le nombre de traits peut différer de 1, le ratio L/H d'un facteur 1.4 (±40 %). */
-export const STROKE_COUNT_TOLERANCE = 1;
-export const MAX_RATIO_FACTOR = 1.4;
+/**
+ * Pré-filtrage, volontairement large : un tracé « un peu différent » (un trait de plus ou de moins,
+ * proportions un peu autres) ne doit pas être écarté avant d'être comparé. C'est le score qui tranche.
+ * (Mesuré : traits ±2 et ratio ×2 font passer le bon signe dans le top 3 de 97-98 % à 100 %.)
+ */
+export const STROKE_COUNT_TOLERANCE = 2;
+export const MAX_RATIO_FACTOR = 2.0;
+
+/**
+ * Tolérances de forme, mesurées sur des dessins refaits avec des proportions déformées, une rotation
+ * jusqu'à 15°, un tremblement constant en pixels et un tracé parfois coupé en deux :
+ * - lissage léger des traits (atténue le tremblement, surtout sur un petit dessin) ;
+ * - comparaison aussi avec les proportions « étirées » (les deux dimensions ramenées à 1) ;
+ * - comparaison aussi après une petite rotation du tracé (± ROTATION_DEGREES).
+ * Bon premier choix : 88-91 % → 97 % sur des redessins un peu différents.
+ */
+export const SMOOTH_PASSES = 1;
+export const ROTATION_DEGREES = 10;
+/** Les variantes (étirement, rotations) ne sont essayées que sur les meilleurs signes de la première passe. */
+export const VARIANT_POOL_SIZE = 8;
+/** Une forme dont le petit côté fait moins de 20 % du grand (ligne) n'est jamais étirée. */
+const MIN_STRETCH_ASPECT = 0.2;
 
 interface QPoint {
   x: number;
@@ -59,6 +87,8 @@ export interface QTemplate {
   strokeCount: number;
   boundingBoxRatio: number;
   cloud: QCloud;
+  /** Même nuage, proportions étirées (null pour une forme quasi linéaire). */
+  stretchCloud: QCloud | null;
   structure: StrokeShape[];
 }
 
@@ -95,13 +125,58 @@ export function toTemplate(sign: {
   boundingBoxRatio: number;
   normalizedGesturePoints: StrokePoint[];
 }): QTemplate {
+  // Le lissage s'applique au moment de la comparaison (aux signes enregistrés comme au tracé) : les
+  // points stockés ne changent pas, les anciens signes en profitent aussi.
+  const points = smoothPoints(sign.normalizedGesturePoints);
+  const stretched = stretchPoints(points);
   return {
     id: sign.id,
     strokeCount: sign.strokeCount,
     boundingBoxRatio: sign.boundingBoxRatio,
-    cloud: toCloud(sign.normalizedGesturePoints),
-    structure: strokeStructure(sign.normalizedGesturePoints),
+    cloud: toCloud(points),
+    stretchCloud: stretched ? toCloud(stretched) : null,
+    structure: strokeStructure(points),
   };
+}
+
+/** Lissage léger de chaque trait (moyenne 1-2-1, extrémités fixes) : atténue le tremblement de la main. */
+export function smoothPoints(points: StrokePoint[], passes = SMOOTH_PASSES): StrokePoint[] {
+  let current = points;
+  for (let pass = 0; pass < passes; pass++) {
+    const source = current;
+    current = source.map((p, i) => {
+      const a = source[i - 1];
+      const b = source[i + 1];
+      if (!a || !b || a.strokeId !== p.strokeId || b.strokeId !== p.strokeId) return p;
+      return { ...p, x: (a.x + 2 * p.x + b.x) / 4, y: (a.y + 2 * p.y + b.y) / 4 };
+    });
+  }
+  return current;
+}
+
+/**
+ * Nuage « étiré » : largeur et hauteur ramenées chacune à 1, centré. Deux dessins du même signe aux
+ * proportions un peu différentes (plus large, plus haut) deviennent alors superposables.
+ * null pour une forme quasi linéaire (l'étirer l'agrandirait en bruit).
+ */
+export function stretchPoints(points: StrokePoint[]): StrokePoint[] | null {
+  if (!points.length) return null;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const height = Math.max(...ys) - Math.min(...ys);
+  if (Math.min(width, height) / Math.max(width, height, 1e-9) < MIN_STRETCH_ASPECT) return null;
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+  const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+  return points.map((p) => ({ ...p, x: (p.x - cx) / width, y: (p.y - cy) / height }));
+}
+
+/** Rotation autour de l'origine (le nuage normalisé y est centré). */
+export function rotatePoints(points: StrokePoint[], degrees: number): StrokePoint[] {
+  const r = (degrees * Math.PI) / 180;
+  const cos = Math.cos(r);
+  const sin = Math.sin(r);
+  return points.map((p) => ({ ...p, x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
 }
 
 /** Résumé des traits d'un nuage normalisé (points équidistants : part de points = part de longueur). */
@@ -141,6 +216,12 @@ export function structureDistance(a: StrokeShape[], b: StrokeShape[]): number {
   return sum + free.reduce((t, s) => t + s.weight * UNMATCHED_STROKE_COST, 0);
 }
 
+/** Facteur de disposition des traits, ou pénalité fixe par trait d'écart si le nombre de traits diffère. */
+function layoutFactor(candidateStrokes: number, structure: StrokeShape[], t: QTemplate): number {
+  const diff = Math.abs(candidateStrokes - t.strokeCount);
+  return diff === 0 ? structureFactor(structure, t.structure) : STROKE_COUNT_MISMATCH_FACTOR ** diff;
+}
+
 /** Facteur multiplicatif du score (1 = disposition identique, au minimum 1 - STRUCTURE_MAX_PENALTY). */
 export function structureFactor(a: StrokeShape[], b: StrokeShape[]): number {
   const excess = Math.max(0, structureDistance(a, b) - STRUCTURE_TOLERANCE);
@@ -153,35 +234,76 @@ export function isCompatible(t: QTemplate, c: QCandidate): boolean {
   return factor <= MAX_RATIO_FACTOR;
 }
 
-/** Top `limit` des signes compatibles, triés par confiance décroissante. */
-export function recognize(candidate: QCandidate, templates: QTemplate[], limit = 3): QMatch[] {
-  const prepared = new Map<number, { cloud: QCloud; structure: StrokeShape[] } | null>();
+/** Nuages du tracé à reconnaître, pour une taille de nuage donnée (variantes calculées à la demande). */
+interface PreparedCandidate {
+  points: StrokePoint[];
+  cloud: QCloud;
+  structure: StrokeShape[];
+  stretch?: QCloud | null;
+  rotated?: QCloud[];
+}
+
+/**
+ * Top `limit` des signes compatibles, triés par confiance décroissante.
+ *
+ * Deux passes : tous les signes sont d'abord comparés simplement (avec abandon anticipé) ; seuls les
+ * `pool` meilleurs sont ensuite comparés avec les variantes tolérantes (proportions étirées, petites
+ * rotations), dont on garde le meilleur score. La pénalité de structure s'applique au résultat.
+ */
+export function recognize(
+  candidate: QCandidate,
+  templates: QTemplate[],
+  limit = 3,
+  pool = VARIANT_POOL_SIZE,
+): QMatch[] {
+  const prepared = new Map<number, PreparedCandidate | null>();
   const prepare = (n: number) => {
     if (!prepared.has(n)) {
-      const points = candidate.normalize(n);
-      prepared.set(n, points.length === n ? { cloud: toCloud(points), structure: strokeStructure(points) } : null);
+      const points = smoothPoints(candidate.normalize(n));
+      prepared.set(
+        n,
+        points.length === n ? { points, cloud: toCloud(points), structure: strokeStructure(points) } : null,
+      );
     }
     return prepared.get(n)!;
   };
-  const best: QMatch[] = [];
 
+  // Passe 1 : comparaison simple de tous les signes compatibles.
+  const first: { t: QTemplate; c: PreparedCandidate; score: number; factor: number }[] = [];
   for (const t of templates) {
     if (!isCompatible(t, candidate)) continue;
     const n = t.cloud.points.length;
     const c = prepare(n);
     if (!c) continue;
-    // Early abandoning : le facteur de structure étant ≤ 1, un score $Q déjà sous le top est perdu.
-    const floor = best.length < limit ? 0 : best[best.length - 1].score;
+    // Abandon anticipé : un score $Q déjà sous le dernier du groupe est perdu (le facteur de structure ≤ 1 ne l'améliore pas).
+    const floor = first.length < pool ? 0 : first[first.length - 1].score;
     const maxDistance = floor > 0 ? scoreToDistance(floor, n) : Infinity;
     const distance = greedyCloudMatch(c.cloud, t.cloud, maxDistance);
     if (distance >= maxDistance) continue;
-    const score = distanceToScore(distance, n) * structureFactor(c.structure, t.structure);
-    if (best.length >= limit && score <= floor) continue;
-    best.push({ signId: t.id, score });
-    best.sort((a, b) => b.score - a.score);
-    if (best.length > limit) best.pop();
+    const factor = layoutFactor(candidate.strokeCount, c.structure, t);
+    const score = distanceToScore(distance, n) * factor;
+    if (first.length >= pool && score <= floor) continue;
+    first.push({ t, c, score, factor });
+    first.sort((a, b) => b.score - a.score);
+    if (first.length > pool) first.pop();
   }
-  return best;
+
+  // Passe 2 : variantes tolérantes sur les meilleurs.
+  const results: QMatch[] = first.map(({ t, c, score, factor }) => {
+    const n = t.cloud.points.length;
+    let best = score / (factor || 1);
+    if (t.stretchCloud) {
+      if (c.stretch === undefined) {
+        const stretched = stretchPoints(c.points);
+        c.stretch = stretched ? toCloud(stretched) : null;
+      }
+      if (c.stretch) best = Math.max(best, distanceToScore(greedyCloudMatch(c.stretch, t.stretchCloud), n));
+    }
+    c.rotated ??= [-ROTATION_DEGREES, ROTATION_DEGREES].map((deg) => toCloud(rotatePoints(c.points, deg)));
+    for (const rotated of c.rotated) best = Math.max(best, distanceToScore(greedyCloudMatch(rotated, t.cloud), n));
+    return { signId: t.id, score: best * factor };
+  });
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 /** Distance pondérée $Q → confiance 0..1 (indépendante du nombre de points). */

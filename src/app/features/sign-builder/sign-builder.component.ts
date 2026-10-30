@@ -39,6 +39,7 @@ import { WordEntryComponent } from '../../shared/word-entry/word-entry.component
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
 import { glyphPaths } from '../../core/utils/glyph-paths';
 import { SimplifiedKind } from '../../core/utils/stroke-simplify';
+import { CONFUSION_SCORE, SUGGESTION_SCORE } from '../../core/utils/recognition-policy';
 import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
 import { ColorPaletteComponent } from '../../shared/color-palette.component';
 import { extractGesture } from '../../core/utils/gesture';
@@ -48,8 +49,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 /** Délai après le dernier trait avant de vérifier la ressemblance avec le dictionnaire. */
 const SIMILARITY_DEBOUNCE_MS = 450;
-/** Au-delà, le Carnet remplacerait automatiquement le tracé par ce signe : risque de confusion. */
-const CONFUSION_SCORE = 0.8;
 
 type StepId = 'word' | 'components' | 'dominant' | 'nonDominant' | 'zones' | 'note';
 
@@ -495,7 +494,7 @@ export class SignBuilderComponent {
       const { matches } = await this.recognition.recognize(strokes);
       const found = await Promise.all(
         matches
-          .filter((m) => m.score >= 0.5 && m.signId !== this.editing()?.id)
+          .filter((m) => m.score >= SUGGESTION_SCORE && m.signId !== this.editing()?.id)
           .map(async (m) => ({ word: (await this.storage.getSign(m.signId))?.word ?? '?', score: m.score })),
       );
       if (request === this.similarityRequest) this.similar.set(found);

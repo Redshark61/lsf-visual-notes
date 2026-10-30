@@ -59,6 +59,7 @@ import {
 } from '../../../core/utils/board-scene';
 import { SignDisplay, SignLayout, signLayout } from '../../../core/utils/board-sign-layout';
 import { BoardTool, TAP_MAX_MOVE_PX, decidePointerAction, isTap } from '../../../core/utils/board-input';
+import { decideMatches } from '../../../core/utils/recognition-policy';
 import { RecognitionService } from '../../../core/services/recognition.service';
 import { SettingsService } from '../../../core/services/settings.service';
 import { StorageService } from '../../../core/services/storage.service';
@@ -68,8 +69,6 @@ import { BoardToolbarComponent } from './board-toolbar.component';
 
 const MIN_POINT_DISTANCE_PX = 4;
 const RECOGNITION_DEBOUNCE_MS = 450;
-const AUTO_REPLACE_SCORE = 0.8;
-const SUGGESTION_SCORE = 0.5;
 const WHEEL_ZOOM_SPEED = 0.0025;
 const ZOOM_STEP = 1.25;
 const SIZE_STEP = 1.25;
@@ -757,11 +756,11 @@ export class BoardComponent {
       const candidates = matches
         .map((m) => ({ sign: this.signs().get(m.signId), score: m.score }))
         .filter((c): c is Candidate => !!c.sign);
-      const best = candidates[0];
-      if (best && best.score > AUTO_REPLACE_SCORE) {
-        const objectId = this.placeRecognized(best.sign.id, strokes);
+      const decision = decideMatches(candidates);
+      if (decision === 'auto') {
+        const objectId = this.placeRecognized(candidates[0].sign.id, strokes);
         this.proposal.set({ kind: 'auto', objectId, candidates, strokes });
-      } else if (best && best.score >= SUGGESTION_SCORE) {
+      } else if (decision === 'suggest') {
         this.proposal.set({ kind: 'suggestions', candidates, strokes });
       } else {
         this.proposal.set({ kind: 'none', strokes });

@@ -20,6 +20,7 @@ import { NoteTitleComponent } from './note-title.component';
 import { BoardComponent } from './board/board.component';
 import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
 import { ChainVideoComponent, VideoClip } from '../../shared/chain-video.component';
+import { decideMatches } from '../../core/utils/recognition-policy';
 import { RecognitionService } from '../../core/services/recognition.service';
 import { MAX_NOTE_TITLE_LENGTH, StorageService } from '../../core/services/storage.service';
 import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
@@ -31,10 +32,6 @@ import { leafSigns, videoSigns } from '../../core/utils/composition';
 
 /** Délai après le lever du stylet, pour laisser le temps de tracer un glyphe en plusieurs traits. */
 const RECOGNITION_DEBOUNCE_MS = 450;
-/** Au-dessus : remplacement automatique du tracé par le signe. */
-const AUTO_REPLACE_SCORE = 0.8;
-/** Au-dessus : le signe est proposé en suggestion. */
-const SUGGESTION_SCORE = 0.5;
 /** Dimensions approximatives de la bulle, pour la garder dans l'écran. */
 const BUBBLE_HEIGHT = 110;
 const BUBBLE_HALF_WIDTH = 110;
@@ -473,13 +470,13 @@ export class NotebookComponent {
       const candidates = matches
         .map((m) => ({ sign: this.signs().get(m.signId), score: m.score }))
         .filter((c): c is Candidate => !!c.sign);
-      const best = candidates[0];
+      const decision = decideMatches(candidates);
 
-      if (best && best.score > AUTO_REPLACE_SCORE) {
-        const elementId = this.insert(best.sign.id);
+      if (decision === 'auto') {
+        const elementId = this.insert(candidates[0].sign.id);
         this.canvas()?.clear();
         this.proposal.set({ kind: 'corrections', elementId, candidates, strokes });
-      } else if (best && best.score >= SUGGESTION_SCORE) {
+      } else if (decision === 'suggest') {
         this.proposal.set({ kind: 'suggestions', candidates, strokes });
       } else {
         this.proposal.set({ kind: 'none', strokes });

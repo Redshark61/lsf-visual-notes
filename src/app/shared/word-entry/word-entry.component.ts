@@ -30,6 +30,7 @@ const fold = (s: string) =>
   imports: [GlyphPathsPipe],
   templateUrl: './word-entry.component.html',
   styleUrl: './word-entry.component.scss',
+  host: { '[class.fill]': 'fill()' },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WordEntryComponent {
@@ -41,8 +42,10 @@ export class WordEntryComponent {
   /** Propose « Créer le signe » quand rien ne correspond (inutile pour choisir un composant). */
   readonly allowCreate = input(true);
   readonly placeholder = input('Tapez un mot…');
+  /** Le champ occupe toute la hauteur disponible (zone d'écriture du Carnet). */
+  readonly fill = input(false);
 
-  private readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('input');
+  private readonly inputRef = viewChild.required<ElementRef<HTMLTextAreaElement>>('input');
 
   protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
   protected readonly query = signal('');
@@ -72,6 +75,8 @@ export class WordEntryComponent {
   }
 
   protected onInput(value: string): void {
+    // Collage multi-lignes : un mot par saisie, pas de saut de ligne.
+    value = value.replace(/\s*[\r\n]+\s*/g, ' ');
     this.query.set(value);
     this.activeIndex.set(0);
   }

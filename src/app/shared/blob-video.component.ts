@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, model, output, signal } from '@angular/core';
 
 const SPEEDS = [1, 0.5, 0.25] as const;
 
@@ -17,14 +17,15 @@ const SPEEDS = [1, 0.5, 0.25] as const;
         [src]="src"
         [class.mirrored]="mirrored()"
         autoplay
-        loop
+        [loop]="loop()"
         muted
         playsinline
         [attr.aria-label]="label()"
         (click)="toggle(video)"
         (play)="playing.set(true)"
         (pause)="playing.set(false)"
-        (loadedmetadata)="duration.set(video.duration)"
+        (loadedmetadata)="onMetadata(video)"
+        (ended)="ended.emit()"
         (timeupdate)="time.set(video.currentTime)"
       ></video>
       @if (controls()) {
@@ -116,11 +117,15 @@ export class BlobVideoComponent {
   readonly label = input('Vidéo du signe');
   /** Affichage en miroir (le fichier lui-même n'est pas modifié). */
   readonly mirrored = input(true);
+  /** Rejouer en boucle. Sinon, `ended` est émis à la fin (enchaînement de clips). */
+  readonly loop = input(true);
+  readonly ended = output<void>();
+  /** Vitesse de lecture ; conservée d'un clip à l'autre quand le parent la lie. */
+  readonly speed = model<number>(1);
   protected readonly url = signal<string | null>(null);
   protected readonly playing = signal(true);
   protected readonly duration = signal(0);
   protected readonly time = signal(0);
-  protected readonly speed = signal<number>(1);
 
   protected progress(): number {
     const d = this.duration();
@@ -132,11 +137,15 @@ export class BlobVideoComponent {
       const url = URL.createObjectURL(this.blob());
       this.url.set(url);
       this.time.set(0);
-      this.speed.set(1); // le nouvel élément <video> repart à la vitesse normale
       this.playing.set(true);
       onCleanup(() => URL.revokeObjectURL(url));
     });
     inject(DestroyRef).onDestroy(() => this.url.set(null));
+  }
+
+  protected onMetadata(video: HTMLVideoElement): void {
+    this.duration.set(video.duration);
+    video.playbackRate = this.speed(); // un nouveau clip reprend la vitesse choisie
   }
 
   protected toggle(video: HTMLVideoElement): void {

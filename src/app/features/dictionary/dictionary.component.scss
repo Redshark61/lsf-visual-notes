@@ -193,6 +193,17 @@ li {
   opacity: 0.8;
 }
 
+.no-result p {
+  margin: 0 0 0.75rem;
+}
+
+.no-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

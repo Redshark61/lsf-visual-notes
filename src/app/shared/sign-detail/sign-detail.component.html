@@ -31,6 +31,13 @@
     </section>
   }
 
+  @if (chain().length) {
+    <section>
+      <h3>{{ video() ? 'Les composants enchaînés' : 'Vidéo : les composants enchaînés' }}</h3>
+      <app-chain-video [clips]="chain()" />
+    </section>
+  }
+
   @if (video(); as v) {
     <section class="video">
       <app-blob-video [blob]="v" [label]="'Vidéo du signe ' + sign().word" />

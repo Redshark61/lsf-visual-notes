@@ -1,6 +1,8 @@
-<input
+<!-- textarea (et non input) : peut occuper toute la hauteur de la zone ; Entrée valide, jamais de saut de ligne. -->
+<textarea
   #input
-  type="text"
+  rows="1"
+  spellcheck="false"
   role="combobox"
   autocomplete="off"
   enterkeyhint="send"
@@ -13,7 +15,7 @@
   [value]="query()"
   (input)="onInput($any($event.target).value)"
   (keydown)="onKey($event)"
-/>
+></textarea>
 @if (matches().length) {
   <ul id="word-options" role="listbox" aria-label="Signes correspondants">
     @for (sign of matches(); track sign.id; let i = $index) {

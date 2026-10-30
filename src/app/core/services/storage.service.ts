@@ -5,6 +5,7 @@ import { BACKUP_FORMAT, BACKUP_VERSION, Backup } from '../models/backup.model';
 import { CustomHandshape } from '../models/catalog.model';
 import { blobToDataUrl, dataUrlToBlob } from '../utils/image';
 import { normalizeHand } from '../utils/hand-spec';
+import { missingComponentIds, videoSigns } from '../utils/composition';
 import { TagCount, normalizeTags, tallyTags } from '../utils/tags';
 import { CatalogService } from './catalog.service';
 import {
@@ -176,6 +177,23 @@ export class StorageService {
       const next = (await db.signs.bulkGet(frontier)).flatMap((s) => s?.components ?? []);
       frontier = [...new Set(next)].filter((id) => !seen.has(id));
     }
+  }
+
+  /**
+   * Clips à lire pour un signe composé qui n'a pas de vidéo propre : les vidéos de ses composants
+   * (et de leurs composants…), dans l'ordre. Vide si aucun composant n'a de vidéo.
+   */
+  async compositionVideos(sign: UserSign): Promise<{ word: string; blob: Blob }[]> {
+    const known = new Map<string, UserSign>([[sign.id, sign]]);
+    let wanted = missingComponentIds([sign], known);
+    for (let depth = 0; wanted.length && depth < 8; depth++) {
+      const found = (await db.signs.bulkGet(wanted)).filter((s): s is UserSign => !!s);
+      found.forEach((s) => known.set(s.id, s));
+      wanted = missingComponentIds(found, known).filter((id) => !wanted.includes(id));
+    }
+    const leaves = videoSigns(sign, known);
+    const videos = await db.videos.bulkGet(leaves.map((s) => s.id));
+    return leaves.flatMap((s, i) => (videos[i] ? [{ word: s.word, blob: videos[i]!.blob }] : []));
   }
 
   /** Nombre d'autres signes dont ce signe est un composant. */

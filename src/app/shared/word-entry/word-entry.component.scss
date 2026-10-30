@@ -4,12 +4,27 @@
   gap: 0.4rem;
 }
 
-input {
+/* fill : le champ occupe toute la zone (liste de suggestions en dessous) au lieu d'une seule ligne. */
+:host(.fill) {
+  flex: 1;
+  min-height: 0;
+}
+
+:host(.fill) textarea {
+  flex: 1;
+  min-height: 3.5rem;
+  font-size: 1.5rem;
+}
+
+textarea {
+  display: block;
+  width: 100%;
   font: inherit;
   font-size: 1.1rem;
   padding: 0.6rem 0.75rem;
   border: 2px solid var(--color-border);
   border-radius: 10px;
+  resize: none;
 
   &:focus {
     border-color: var(--color-primary);

@@ -4,6 +4,7 @@ import { DatePipe } from '@angular/common';
 import { CatalogService } from '../../core/services/catalog.service';
 import { StorageService } from '../../core/services/storage.service';
 import { BlobVideoComponent } from '../blob-video.component';
+import { ChainVideoComponent, VideoClip } from '../chain-video.component';
 import { UserSign } from '../../core/models/sign.model';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
 import { describeHand } from './describe-hand';
@@ -13,7 +14,7 @@ import { isEmptyHand } from '../../core/utils/hand-spec';
 /** Fiche complète d'un signe (Carnet, et plus tard liste du dictionnaire). */
 @Component({
   selector: 'app-sign-detail',
-  imports: [DatePipe, GlyphPathsPipe, BlobVideoComponent],
+  imports: [DatePipe, GlyphPathsPipe, BlobVideoComponent, ChainVideoComponent],
   templateUrl: './sign-detail.component.html',
   styleUrl: './sign-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -27,6 +28,8 @@ export class SignDetailComponent {
   protected readonly shareError = signal<string | null>(null);
   /** Signes qui composent ce signe (signe composé), dans l'ordre. */
   protected readonly parts = signal<UserSign[]>([]);
+  /** Vidéos des composants, enchaînées (signe composé dont des composants ont une vidéo). */
+  protected readonly chain = signal<VideoClip[]>([]);
 
   protected readonly viewBox = `0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`;
   protected readonly hands = computed(() => {
@@ -59,8 +62,15 @@ export class SignDetailComponent {
       this.video.set(null);
       this.shareError.set(null);
       this.parts.set([]);
+      this.chain.set([]);
       const ids = sign.components ?? [];
       if (ids.length) {
+        this.storage
+          .compositionVideos(sign)
+          .then((clips) => {
+            if (this.sign().id === sign.id) this.chain.set(clips);
+          })
+          .catch(() => undefined);
         this.storage.getSigns(ids).then((found) => {
           if (this.sign().id === sign.id) this.parts.set(ids.flatMap((id) => found.get(id) ?? []));
         });

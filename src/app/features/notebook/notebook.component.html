@@ -154,7 +154,7 @@
 
         @if (inputMode() === 'type') {
           <div class="typing">
-            <app-word-entry [signs]="allSigns()" (pick)="insert($event)" (create)="createFromWord($event)" />
+            <app-word-entry [fill]="true" [signs]="allSigns()" (pick)="insert($event)" (create)="createFromWord($event)" />
           </div>
         } @else {
           @if (proposal(); as p) {
@@ -209,7 +209,7 @@
       <div
         class="bubble"
         [class.above]="b.above"
-        [class.with-video]="!!sign?.video"
+        [class.with-video]="hasVideoContent(sign)"
         [style.left.px]="b.x"
         [style.top.px]="b.y"
         role="group"
@@ -219,10 +219,12 @@
         @if (selectedComposition(); as composition) {
           <small class="composition">= {{ composition }}</small>
         }
-        @if (sign?.video) {
-          @if (bubbleVideo(); as video) {
-            <!-- La vidéo démarre dès le clic (en boucle, sans son). -->
-            <app-blob-video class="bubble-video" [blob]="video" [label]="'Vidéo du signe ' + sign!.word" />
+        @if (hasVideoContent(sign)) {
+          @if (bubbleClips(); as clips) {
+            @if (clips.length) {
+              <!-- La vidéo démarre dès le clic (en boucle, sans son) ; signe composé : composants enchaînés. -->
+              <app-chain-video class="bubble-video" [clips]="clips" />
+            }
           } @else {
             <small class="composition">Chargement de la vidéo…</small>
           }

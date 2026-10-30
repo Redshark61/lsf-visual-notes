@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createsCycle, findCompositionCycle, leafSigns, missingComponentIds } from './composition';
+import { createsCycle, findCompositionCycle, leafSigns, missingComponentIds, videoSigns } from './composition';
 import { SignGlyph, UserSign } from '../models/sign.model';
 
 const glyph = {} as SignGlyph;
+const withVideo = (s: UserSign): UserSign => ({ ...s, video: { mimeType: 'video/mp4', durationMs: 1000, bytes: 10 } });
 const sign = (id: string, components?: string[], withGlyph = true): UserSign => ({
   id,
   word: id,
@@ -81,5 +82,33 @@ describe('missingComponentIds', () => {
   it('liste les composants pas encore chargés, sans doublon', () => {
     const known = index(sign('a'));
     expect(missingComponentIds([sign('t', ['a', 'b', 'b', 'c'])], known).sort()).toEqual(['b', 'c']);
+  });
+});
+
+describe('videoSigns', () => {
+  it('enchaîne les vidéos des composants dans l\'ordre, en sautant ceux sans vidéo', () => {
+    const byId = index(withVideo(sign('attention')), sign('sansVideo'), withVideo(sign('soin')), sign('top', ['attention', 'sansVideo', 'soin']));
+    expect(videoSigns(byId.get('top')!, byId).map((s) => s.id)).toEqual(['attention', 'soin']);
+  });
+
+  it('développe un composant composé sans vidéo, garde celui qui a sa propre vidéo', () => {
+    const byId = index(
+      withVideo(sign('a')),
+      withVideo(sign('b')),
+      sign('sansVideo', ['a', 'b']),
+      withVideo(sign('avecVideo', ['a', 'b'])),
+      sign('top', ['sansVideo', 'avecVideo']),
+    );
+    expect(videoSigns(byId.get('top')!, byId).map((s) => s.id)).toEqual(['a', 'b', 'avecVideo']);
+  });
+
+  it('rejoue un composant utilisé deux fois et ignore les signes supprimés', () => {
+    const byId = index(withVideo(sign('tres')), sign('top', ['tres', 'supprime', 'tres']));
+    expect(videoSigns(byId.get('top')!, byId).map((s) => s.id)).toEqual(['tres', 'tres']);
+  });
+
+  it('ne boucle pas sur un cycle et renvoie vide sans vidéo', () => {
+    expect(videoSigns(sign('x', ['y']), index(sign('x', ['y']), sign('y', ['x'])))).toEqual([]);
+    expect(videoSigns(sign('t', ['a']), index(sign('a')))).toEqual([]);
   });
 });

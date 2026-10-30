@@ -19,13 +19,13 @@ import { WordEntryComponent } from '../../shared/word-entry/word-entry.component
 import { NoteTitleComponent } from './note-title.component';
 import { MindMapComponent } from './mind-map/mind-map.component';
 import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
-import { BlobVideoComponent } from '../../shared/blob-video.component';
+import { ChainVideoComponent, VideoClip } from '../../shared/chain-video.component';
 import { RecognitionService } from '../../core/services/recognition.service';
 import { MAX_NOTE_TITLE_LENGTH, StorageService } from '../../core/services/storage.service';
 import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
 import { MapNode, MindMap, NoteElement, NotePage, Stroke, UserSign } from '../../core/models/sign.model';
 import { GLYPH_VIEWBOX } from '../../core/utils/freehand';
-import { leafSigns, missingComponentIds } from '../../core/utils/composition';
+import { leafSigns, missingComponentIds, videoSigns } from '../../core/utils/composition';
 
 /** Délai après le lever du stylet, pour laisser le temps de tracer un glyphe en plusieurs traits. */
 const RECOGNITION_DEBOUNCE_MS = 450;
@@ -85,7 +85,7 @@ type Proposal =
     WordEntryComponent,
     NoteTitleComponent,
     MindMapComponent,
-    BlobVideoComponent,
+    ChainVideoComponent,
     GlyphPathsPipe,
     NgTemplateOutlet,
     PercentPipe,
@@ -134,8 +134,11 @@ export class NotebookComponent {
   protected readonly selectedNodeId = signal<string | null>(null);
   protected readonly isMap = computed(() => this.note()?.layout === 'map');
   protected readonly hasElements = computed(() => allElements(this.note()).length > 0);
-  /** Vidéo du signe sélectionné : se lance dans la bulle dès le clic (null : pas de vidéo, ou en chargement). */
-  protected readonly bubbleVideo = signal<Blob | null>(null);
+  /**
+   * Vidéos du signe sélectionné, lancées dans la bulle dès le clic : sa vidéo propre, sinon (signe
+   * composé) celles de ses composants enchaînées. null = en chargement ; [] = rien à lire.
+   */
+  protected readonly bubbleClips = signal<VideoClip[] | null>(null);
   /** « attention + prendre soin » pour le signe composé sélectionné. */
   protected readonly selectedComposition = computed(() => {
     const ids = this.selectedSign()?.components ?? [];
@@ -179,11 +182,18 @@ export class NotebookComponent {
     inject(DestroyRef).onDestroy(() => clearTimeout(this.debounce));
     effect(() => {
       const sign = this.selectedSign();
-      this.bubbleVideo.set(null);
-      if (!sign?.video) return;
-      this.storage.getVideo(sign.id).then((video) => {
-        if (this.selectedSign()?.id === sign.id) this.bubbleVideo.set(video?.blob ?? null);
-      });
+      this.bubbleClips.set(null);
+      if (!sign || !this.hasVideoContent(sign)) return;
+      const clips = sign.video
+        ? this.storage.getVideo(sign.id).then((v) => (v ? [{ word: sign.word, blob: v.blob }] : []))
+        : this.storage.compositionVideos(sign);
+      clips
+        .then((found) => {
+          if (this.selectedSign()?.id === sign.id) this.bubbleClips.set(found);
+        })
+        .catch(() => {
+          if (this.selectedSign()?.id === sign.id) this.bubbleClips.set([]);
+        });
     });
     effect(() => {
       const prefs = { display: this.display(), inputMode: this.inputMode() };
@@ -304,6 +314,11 @@ export class NotebookComponent {
     }
   }
 
+  /** Le signe a une vidéo, ou (composé) au moins un composant en a une. */
+  protected hasVideoContent(sign: UserSign | undefined): boolean {
+    return !!sign && (!!sign.video || (!!sign.components?.length && videoSigns(sign, this.signs()).length > 0));
+  }
+
   /** Dessins à afficher pour un signe composé sans dessin propre : ceux de ses composants. */
   protected componentGlyphs(sign: UserSign | undefined): UserSign[] {
     return sign?.components?.length ? leafSigns(sign, this.signs()).filter((s) => !!s.glyph) : [];
@@ -383,11 +398,12 @@ export class NotebookComponent {
     }
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const sign = this.signs().get(allElements(this.note()).find((e) => e.id === id)?.signId ?? '');
-    const height = sign?.video ? VIDEO_BUBBLE_HEIGHT : BUBBLE_HEIGHT;
+    const withVideo = this.hasVideoContent(sign);
+    const height = withVideo ? VIDEO_BUBBLE_HEIGHT : BUBBLE_HEIGHT;
     const spaceBelow = window.innerHeight - rect.bottom;
     // Sous le signe, sauf s'il n'y a pas la place et qu'il y en a davantage au-dessus.
     const above = spaceBelow < height && rect.top > spaceBelow;
-    const margin = (sign?.video ? VIDEO_BUBBLE_HALF_WIDTH : BUBBLE_HALF_WIDTH) + 8;
+    const margin = (withVideo ? VIDEO_BUBBLE_HALF_WIDTH : BUBBLE_HALF_WIDTH) + 8;
     this.selectedId.set(id);
     this.bubble.set({
       x: Math.min(Math.max(rect.left + rect.width / 2, margin), window.innerWidth - margin),

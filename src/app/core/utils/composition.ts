@@ -59,6 +59,21 @@ export function leafSigns(sign: Composite, byId: ReadonlyMap<string, UserSign>, 
   });
 }
 
+/**
+ * Signes dont il faut enchaîner la vidéo pour un signe composé, dans l'ordre : un composant qui a sa
+ * propre vidéo est joué tel quel ; un composant composé sans vidéo est développé en ses composants ;
+ * les autres sont sautés.
+ */
+export function videoSigns(sign: Composite, byId: ReadonlyMap<string, UserSign>, depth = 0): UserSign[] {
+  if (depth > MAX_DEPTH) return [];
+  return (sign.components ?? []).flatMap((id) => {
+    const component = byId.get(id);
+    if (!component) return [];
+    if (component.video) return [component];
+    return component.components?.length ? videoSigns(component, byId, depth + 1) : [];
+  });
+}
+
 /** Ids des signes à charger pour afficher un signe composé (composants, et leurs composants…). */
 export function missingComponentIds(
   signs: Iterable<Composite>,

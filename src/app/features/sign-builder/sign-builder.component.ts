@@ -284,6 +284,9 @@ export class SignBuilderComponent {
     const editId = route.paramMap.get('id');
     // ?etape=dessin : ajout rapide d'un dessin depuis le Dictionnaire.
     if (editId) this.loadForEdit(editId, route.queryParamMap.get('etape') === 'dessin');
+    // ?mot=… : création proposée par le Dictionnaire quand une recherche ne trouve rien.
+    const proposedWord = route.queryParamMap.get('mot')?.trim();
+    if (!editId && proposedWord && !this.word()) this.word.set(proposedWord.slice(0, MAX_WORD_LENGTH));
     inject(DestroyRef).onDestroy(() => clearTimeout(this.debounce));
   }
 

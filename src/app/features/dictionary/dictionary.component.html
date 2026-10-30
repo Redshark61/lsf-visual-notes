@@ -88,8 +88,17 @@
           </li>
         } @empty {
           <li class="no-result">
-            Aucun signe ne correspond.
-            <button type="button" class="link" (click)="resetFilters()">Effacer les filtres</button>
+            <p>
+              Aucun signe ne correspond@if (query().trim(); as q) {
+                à « {{ q }} »}.
+            </p>
+            @if (query().trim(); as q) {
+              <!-- Le signe n'existe pas : on propose de le créer (nom déjà rempli dans l'Atelier). -->
+              <a class="button primary" routerLink="/atelier" [queryParams]="{ mot: q }">Créer le signe « {{ q }} »</a>
+            }
+            @if (hasFilters()) {
+              <button type="button" class="link" (click)="resetFilters()">Effacer les filtres</button>
+            }
           </li>
         }
       </ul>

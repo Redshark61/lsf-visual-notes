@@ -209,6 +209,7 @@
       <div
         class="bubble"
         [class.above]="b.above"
+        [class.with-video]="!!sign?.video"
         [style.left.px]="b.x"
         [style.top.px]="b.y"
         role="group"
@@ -217,6 +218,14 @@
         <strong class="word">{{ sign?.word ?? 'Signe supprimé' }}</strong>
         @if (selectedComposition(); as composition) {
           <small class="composition">= {{ composition }}</small>
+        }
+        @if (sign?.video) {
+          @if (bubbleVideo(); as video) {
+            <!-- La vidéo démarre dès le clic (en boucle, sans son). -->
+            <app-blob-video class="bubble-video" [blob]="video" [label]="'Vidéo du signe ' + sign!.word" />
+          } @else {
+            <small class="composition">Chargement de la vidéo…</small>
+          }
         }
         <div class="bubble-actions">
           @if (sign) {

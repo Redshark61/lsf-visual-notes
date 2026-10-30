@@ -283,6 +283,15 @@ button {
     opacity: 0.75;
   }
 
+  &.with-video {
+    width: min(300px, calc(100vw - 1rem));
+    max-width: none;
+  }
+
+  .bubble-video {
+    width: 100%;
+  }
+
   .bubble-actions {
     display: flex;
     flex-direction: column;

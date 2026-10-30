@@ -19,6 +19,7 @@ import { WordEntryComponent } from '../../shared/word-entry/word-entry.component
 import { NoteTitleComponent } from './note-title.component';
 import { MindMapComponent } from './mind-map/mind-map.component';
 import { GlyphPathsPipe } from '../../shared/glyph-paths.pipe';
+import { BlobVideoComponent } from '../../shared/blob-video.component';
 import { RecognitionService } from '../../core/services/recognition.service';
 import { MAX_NOTE_TITLE_LENGTH, StorageService } from '../../core/services/storage.service';
 import { SignDraftTransferService } from '../../core/services/sign-draft-transfer.service';
@@ -35,6 +36,9 @@ const SUGGESTION_SCORE = 0.5;
 /** Dimensions approximatives de la bulle, pour la garder dans l'écran. */
 const BUBBLE_HEIGHT = 110;
 const BUBBLE_HALF_WIDTH = 110;
+/** Bulle avec vidéo : plus grande (la vidéo se lance au clic sur le signe). */
+const VIDEO_BUBBLE_HEIGHT = 390;
+const VIDEO_BUBBLE_HALF_WIDTH = 150;
 
 export type NoteDisplay = 'signs' | 'words' | 'both';
 export type InputMode = 'draw' | 'type';
@@ -81,7 +85,12 @@ type Proposal =
     WordEntryComponent,
     NoteTitleComponent,
     MindMapComponent,
-    GlyphPathsPipe, NgTemplateOutlet, PercentPipe, RouterLink],
+    BlobVideoComponent,
+    GlyphPathsPipe,
+    NgTemplateOutlet,
+    PercentPipe,
+    RouterLink,
+  ],
   host: {
     '(document:click)': 'onDocumentClick($event)',
     '(document:keydown.escape)': 'closeBubble()',
@@ -125,6 +134,8 @@ export class NotebookComponent {
   protected readonly selectedNodeId = signal<string | null>(null);
   protected readonly isMap = computed(() => this.note()?.layout === 'map');
   protected readonly hasElements = computed(() => allElements(this.note()).length > 0);
+  /** Vidéo du signe sélectionné : se lance dans la bulle dès le clic (null : pas de vidéo, ou en chargement). */
+  protected readonly bubbleVideo = signal<Blob | null>(null);
   /** « attention + prendre soin » pour le signe composé sélectionné. */
   protected readonly selectedComposition = computed(() => {
     const ids = this.selectedSign()?.components ?? [];
@@ -166,6 +177,14 @@ export class NotebookComponent {
       .pipe(takeUntilDestroyed())
       .subscribe((params) => this.open(params.get('note')).catch((e) => this.error.set(String(e))));
     inject(DestroyRef).onDestroy(() => clearTimeout(this.debounce));
+    effect(() => {
+      const sign = this.selectedSign();
+      this.bubbleVideo.set(null);
+      if (!sign?.video) return;
+      this.storage.getVideo(sign.id).then((video) => {
+        if (this.selectedSign()?.id === sign.id) this.bubbleVideo.set(video?.blob ?? null);
+      });
+    });
     effect(() => {
       const prefs = { display: this.display(), inputMode: this.inputMode() };
       try {
@@ -363,8 +382,12 @@ export class NotebookComponent {
       return;
     }
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const above = rect.bottom + BUBBLE_HEIGHT > window.innerHeight;
-    const margin = BUBBLE_HALF_WIDTH + 8;
+    const sign = this.signs().get(allElements(this.note()).find((e) => e.id === id)?.signId ?? '');
+    const height = sign?.video ? VIDEO_BUBBLE_HEIGHT : BUBBLE_HEIGHT;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    // Sous le signe, sauf s'il n'y a pas la place et qu'il y en a davantage au-dessus.
+    const above = spaceBelow < height && rect.top > spaceBelow;
+    const margin = (sign?.video ? VIDEO_BUBBLE_HALF_WIDTH : BUBBLE_HALF_WIDTH) + 8;
     this.selectedId.set(id);
     this.bubble.set({
       x: Math.min(Math.max(rect.left + rect.width / 2, margin), window.innerWidth - margin),

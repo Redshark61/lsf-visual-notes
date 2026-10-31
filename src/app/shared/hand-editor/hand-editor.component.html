@@ -56,7 +56,7 @@
   </div>
 </details>
 
-<details class="section" [open]="isOpen('movement')" (toggle)="onToggle('movement', $event)">
+<details class="section" id="movementSection" #movementSection [open]="isOpen('movement')" (toggle)="onToggle('movement', $event)">
   <summary>
     <span class="title">Mouvement</span>
     <span class="value" [class.missing]="!hand().movementIds.length">{{ movementSummary() || 'à choisir' }}</span>
@@ -66,10 +66,16 @@
     <app-catalog-picker
       label="Mouvements"
       [multiple]="true"
-      [items]="catalog.movements()"
-      [values]="hand().movementIds"
+      [items]="movementItems()"
+      [values]="chipMovements()"
       (valuesChange)="setMovements($event)"
     />
+    @if (showSymmetric()) {
+      <label class="repeat">
+        <input type="checkbox" [checked]="symmetric()" (change)="setSymmetric($any($event.target).checked)" />
+        Mains symétriques (la main dominée reprend la dominante en miroir)
+      </label>
+    }
   </div>
 </details>
 

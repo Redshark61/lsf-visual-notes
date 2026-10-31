@@ -37,7 +37,26 @@
       </p>
     }
     <div class="layout">
-      <app-wizard-stepper [steps]="steps" [current]="stepIndex()" [reachable]="reachable()" (selected)="goTo($event)" />
+      <app-wizard-stepper
+        [steps]="steps"
+        [current]="stepIndex()"
+        [reachable]="reachable()"
+        [hasGlyph]="!!glyph()"
+        [hasVideo]="hasVideo()"
+        [canGoBack]="stepIndex() > 0"
+        [isLast]="isLast()"
+        [canAdvance]="canAdvance()"
+        [skipping]="step().optional && stepIsEmpty()"
+        [canSave]="canSave()"
+        [saving]="saving()"
+        [blocker]="blocker()"
+        (selected)="goTo($event)"
+        (drawing)="openDrawing()"
+        (video)="openVideo()"
+        (previous)="previous()"
+        (next)="next()"
+        (save)="save()"
+      />
 
       <div class="content">
         <header class="step-header">
@@ -111,7 +130,7 @@
 
         @case ('dominant') {
           @if (catalog.catalog()) {
-            <app-hand-editor [(hand)]="dominant" />
+            <app-hand-editor [(hand)]="dominant" [showSymmetric]="true" />
           }
         }
 
@@ -216,23 +235,6 @@
 
       </div>
     </div>
-
-    <app-wizard-fabs
-      [canGoBack]="stepIndex() > 0"
-      [isLast]="isLast()"
-      [canAdvance]="canAdvance()"
-      [blocker]="blocker()"
-      [skipping]="step().optional && stepIsEmpty()"
-      [canSave]="canSave()"
-      [saving]="saving()"
-      [hasGlyph]="!!glyph()"
-      [hasVideo]="hasVideo()"
-      (previous)="previous()"
-      (next)="next()"
-      (save)="save()"
-      (drawing)="openDrawing()"
-      (video)="openVideo()"
-    />
 
     <app-sheet #drawingSheet title="Dessin du signe" (closed)="onDrawingClosed()">
       @if (drawingOpen()) {

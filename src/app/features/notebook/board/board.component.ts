@@ -81,7 +81,9 @@ interface Candidate {
   score: number;
 }
 
+/** Trait de l'outil Signe en attente de reconnaissance (annulable et effaçable comme le reste). */
 interface PreviewStroke {
+  id: string;
   points: Point[];
   size: number;
 }
@@ -206,8 +208,8 @@ export class BoardComponent {
     const s = this.liveStroke();
     return s ? strokeToSvgPath(s.points, { ...PEN_OPTIONS, size: s.size }) : '';
   });
-  protected readonly previewDs = computed(() =>
-    this.preview().map((s) => strokeToSvgPath(s.points, { ...PEN_OPTIONS, size: s.size })),
+  protected readonly previewItems = computed(() =>
+    this.preview().map((s) => ({ id: s.id, d: strokeToSvgPath(s.points, { ...PEN_OPTIONS, size: s.size }) })),
   );
   protected readonly glyphSigns = computed(() => [...this.signs().values()].filter((s) => !!s.glyph));
   protected readonly layouts = computed(() => {
@@ -220,7 +222,7 @@ export class BoardComponent {
     return map;
   });
   protected readonly selectedObject = computed(() => this.objects().find((o) => o.id === this.selectedId()));
-  protected readonly canUndo = computed(() => this.history().past.length > 0);
+  protected readonly canUndo = computed(() => this.history().past.length > 0 || this.preview().length > 0);
   protected readonly canRedo = computed(() => this.history().future.length > 0);
   protected readonly placingWord = computed(() => this.signs().get(this.placingSignId() ?? '')?.word ?? '');
   protected readonly editorStyle = computed(() => {
@@ -592,7 +594,13 @@ export class BoardComponent {
         const ids = this.erasing();
         this.erasing.set(new Set());
         if (cancelled || !ids.size) return;
-        this.commit(this.working.filter((o) => !ids.has(o.id)));
+        const remaining = this.working.filter((o) => !ids.has(o.id));
+        if (remaining.length !== this.working.length) this.commit(remaining);
+        const pending = this.preview();
+        if (pending.some((s) => ids.has(s.id))) {
+          this.preview.set(pending.filter((s) => !ids.has(s.id)));
+          this.previewChanged();
+        }
         const selected = this.selectedId();
         if (selected && ids.has(selected)) this.selectedId.set(null);
         return;
@@ -611,8 +619,9 @@ export class BoardComponent {
   }
 
   private eraseAt(clientX: number, clientY: number): void {
-    const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-obj]');
-    const id = hit?.getAttribute('data-obj');
+    // Objets du plateau (data-obj) ou traits de l'outil Signe en attente (data-preview).
+    const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-obj], [data-preview]');
+    const id = hit?.getAttribute('data-obj') ?? hit?.getAttribute('data-preview');
     if (!hit || !id || !this.stage().nativeElement.contains(hit)) return;
     if (!this.erasing().has(id)) this.erasing.update((ids) => new Set(ids).add(id));
   }
@@ -704,6 +713,12 @@ export class BoardComponent {
   }
 
   protected undo(): void {
+    // Des traits de l'outil Signe attendent d'être reconnus : annuler retire le dernier d'abord.
+    if (this.preview().length) {
+      this.preview.update((list) => list.slice(0, -1));
+      this.previewChanged();
+      return;
+    }
     const r = undoHistory(this.history(), this.working);
     if (!r) return;
     this.history.set(r.history);
@@ -726,7 +741,7 @@ export class BoardComponent {
       return;
     }
     // Outil Signe : le tracé est conservé en aperçu, puis reconnu quand le stylet reste levé.
-    this.preview.update((list) => [...list, { points, size }]);
+    this.preview.update((list) => [...list, { id: crypto.randomUUID(), points, size }]);
     this.scheduleRecognition();
   }
 
@@ -806,6 +821,15 @@ export class BoardComponent {
     this.commit(addObjects(base, inks));
     this.preview.set([]);
     this.proposal.set(null);
+  }
+
+  /** Les traits en attente ont changé (annulation, gomme) : on relance la reconnaissance sur ceux qui restent. */
+  private previewChanged(): void {
+    clearTimeout(this.debounce);
+    this.recognitionRequest++;
+    this.recognizing.set(false);
+    this.proposal.set(null);
+    if (this.preview().length) this.scheduleRecognition();
   }
 
   protected discardPreview(): void {

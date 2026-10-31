@@ -5,8 +5,7 @@
   max-width: 1040px;
   min-height: 100%;
   margin: 0 auto;
-  // Réserve la place des boutons flottants (le dernier contenu ne passe jamais dessous).
-  padding: 1rem 1rem 7.5rem;
+  padding: 1rem;
 }
 
 .layout {
@@ -266,10 +265,8 @@ a.link {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.5rem;
-    background: #fff;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .name {

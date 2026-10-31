@@ -26,7 +26,7 @@
   }
 </ng-template>
 
-<section class="notebook" [class.canvas]="isCanvas()">
+<section class="notebook">
   <header class="toolbar">
     <label class="sr-only" for="note-select">Note</label>
     <select id="note-select" (change)="switchNote($any($event.target).value)">
@@ -78,7 +78,7 @@
     </div>
 
     <!-- Un seul écran en deux zones jointives : la note (haut) et la zone d'écriture (bas). -->
-    <div class="screen" [class.canvas]="isCanvas()">
+    <div class="screen">
       @if (isCanvas()) {
         <!-- Dessin libre : tout l'écran est le plateau (ses propres outils). -->
         <app-board

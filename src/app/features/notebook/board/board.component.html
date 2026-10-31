@@ -80,8 +80,11 @@
       }
 
       <!-- Dessin en attente de reconnaissance (outil Signe) et trait en cours -->
-      @for (d of previewDs(); track $index) {
-        <path class="pending" [attr.d]="d" [attr.fill]="inkColor()" />
+      @for (p of previewItems(); track p.id) {
+        <g [attr.data-preview]="p.id" [class.erasing]="erasing().has(p.id)">
+          <path class="hit" [attr.d]="p.d" />
+          <path class="pending" [attr.d]="p.d" [attr.fill]="inkColor()" />
+        </g>
       }
       @if (liveD(); as d) {
         <path [attr.d]="d" [attr.fill]="inkColor()" />

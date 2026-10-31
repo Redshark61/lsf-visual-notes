@@ -1,13 +1,15 @@
+/* Pas de cadre autour de la liste (les cartes suffisent) et pas de défilement interne : tout est affiché,
+   seule la page défile. */
 .picker {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem 0.75rem;
+  border: none;
+  padding: 0;
   margin: 0;
   min-width: 0;
 }
 
 legend {
-  padding: 0 0.25rem;
+  padding: 0;
+  margin-bottom: 0.35rem;
   font-size: 0.9rem;
 }
 
@@ -16,15 +18,6 @@ legend {
   margin-bottom: 0.5rem;
   padding: 0.35rem 0.5rem;
   font: inherit;
-}
-
-.options {
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.cards .options {
-  max-height: min(42vh, 420px);
 }
 
 .group + .group {

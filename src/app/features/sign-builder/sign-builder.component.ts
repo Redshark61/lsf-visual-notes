@@ -19,7 +19,6 @@ import { BlobVideoComponent } from '../../shared/blob-video.component';
 import { HandsPreviewComponent, isSymmetric } from '../../shared/hands-preview/hands-preview.component';
 import { summarizeHand } from '../../shared/sign-detail/describe-hand';
 import { emptyHand, isEmptyHand } from '../../core/utils/hand-spec';
-import { WizardFabsComponent } from './wizard-fabs.component';
 import { WizardStepperComponent } from './wizard-stepper.component';
 import { SheetComponent } from '../../shared/sheet/sheet.component';
 import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
@@ -99,7 +98,6 @@ interface Similar {
     BodyMapComponent,
     HandEditorComponent,
     VideoRecorderComponent,
-    WizardFabsComponent,
     WizardStepperComponent,
     SheetComponent,
     TagInputComponent,

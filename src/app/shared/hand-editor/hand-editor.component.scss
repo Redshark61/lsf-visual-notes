@@ -1,17 +1,12 @@
 :host {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
 
+/* Sections à plat, séparées par un simple trait (pas de boîtes dans les boîtes). */
 .section {
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: #fff;
-
-  &[open] > summary {
-    border-bottom: 1px solid var(--color-border);
-  }
+  border-top: 1px solid var(--color-border);
+  scroll-margin-top: 6rem; // le menu collé en haut (téléphone) ne masque pas la section visée
 }
 
 summary {
@@ -19,7 +14,7 @@ summary {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.25rem 0.75rem;
-  padding: 0.65rem 0.85rem;
+  padding: 0.75rem 0;
   cursor: pointer;
   list-style: none;
 
@@ -58,7 +53,7 @@ summary {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 0.75rem;
+  padding: 0 0 0.9rem;
 }
 
 .hint,

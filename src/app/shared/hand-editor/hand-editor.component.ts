@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, inject, model, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, afterNextRender, computed, ElementRef, inject, Injector, input, model, signal, viewChild } from '@angular/core';
 import { CatalogPickerComponent } from '../catalog-picker/catalog-picker.component';
 import { HandshapePhotoComponent } from '../handshape-photo/handshape-photo.component';
 import { CatalogService } from '../../core/services/catalog.service';
+import { SYMMETRIC_MOVEMENT } from '../hands-preview/hands-preview.component';
 import { HandSpec, MAX_HANDSHAPE_SEQUENCE } from '../../core/models/sign.model';
 
 type Section = 'config' | 'movement' | 'direction' | 'orientation';
@@ -20,14 +21,28 @@ const STATIC_MOVEMENT = 'move_none';
 })
 export class HandEditorComponent {
   protected readonly catalog = inject(CatalogService);
+  private readonly injector = inject(Injector);
   readonly hand = model.required<HandSpec>();
+  /** Affiche la case « mains symétriques » (main dominante, quand il y a deux mains). */
+  readonly showSymmetric = input(false);
+  private readonly movementSection = viewChild<ElementRef<HTMLElement>>('movementSection');
 
   protected readonly maxSequence = MAX_HANDSHAPE_SEQUENCE;
   /** Étape de la suite en cours d'édition ; = longueur de la suite pour « configuration suivante ». */
   protected readonly activeSlot = signal(0);
   private readonly openSections = signal(new Set<Section>(['config']));
 
-  protected readonly moving = computed(() => this.hand().movementIds.some((m) => m !== STATIC_MOVEMENT));
+  protected readonly symmetric = computed(() => this.hand().movementIds.includes(SYMMETRIC_MOVEMENT));
+  /** Avec la case à cocher, « symétrique » n'est plus proposé dans la liste des mouvements. */
+  protected readonly movementItems = computed(() =>
+    this.showSymmetric() ? this.catalog.movements().filter((m) => m.id !== SYMMETRIC_MOVEMENT) : this.catalog.movements(),
+  );
+  protected readonly chipMovements = computed(() =>
+    this.showSymmetric() ? this.hand().movementIds.filter((m) => m !== SYMMETRIC_MOVEMENT) : this.hand().movementIds,
+  );
+  protected readonly moving = computed(() =>
+    this.hand().movementIds.some((m) => m !== STATIC_MOVEMENT && m !== SYMMETRIC_MOVEMENT),
+  );
   protected readonly pendingSlot = computed(
     () => this.hand().handshapeIds.length > 0 && this.activeSlot() === this.hand().handshapeIds.length,
   );
@@ -67,8 +82,13 @@ export class HandEditorComponent {
     ids[Math.min(this.activeSlot(), ids.length)] = id;
     const first = this.hand().handshapeIds.length === 0;
     this.patch({ handshapeIds: ids });
-    // Premier choix : on enchaîne naturellement sur le mouvement.
-    if (first && this.hand().movementIds.length === 0) this.openSections.update((s) => new Set([...s, 'movement']));
+    // Premier choix : on enchaîne naturellement sur le mouvement (ouvert et amené à l'écran).
+    if (first && this.hand().movementIds.length === 0) {
+      this.openSections.update((s) => new Set([...s, 'movement']));
+      afterNextRender(() => this.movementSection()?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }), {
+        injector: this.injector,
+      });
+    }
   }
 
   protected addSlot(): void {
@@ -88,15 +108,22 @@ export class HandEditorComponent {
   // --- Mouvements, directions, orientation
 
   /** « Aucun (statique) » est exclusif : il remplace les autres, et inversement. */
-  protected setMovements(ids: string[]): void {
-    const added = ids.find((id) => !this.hand().movementIds.includes(id));
-    const movementIds =
-      added === STATIC_MOVEMENT ? [STATIC_MOVEMENT] : ids.filter((id) => id !== STATIC_MOVEMENT || ids.length === 1);
-    const moving = movementIds.some((m) => m !== STATIC_MOVEMENT);
+  protected setMovements(chosen: string[]): void {
+    const previous = this.chipMovements();
+    const added = chosen.find((id) => !previous.includes(id));
+    const picked =
+      added === STATIC_MOVEMENT ? [STATIC_MOVEMENT] : chosen.filter((id) => id !== STATIC_MOVEMENT || chosen.length === 1);
+    const moving = picked.some((m) => m !== STATIC_MOVEMENT);
+    const symmetric = this.showSymmetric() && this.symmetric();
     this.patch({
-      movementIds,
+      movementIds: symmetric ? [...picked, SYMMETRIC_MOVEMENT] : picked,
       ...(moving ? {} : { directionIds: [], repeated: undefined }),
     });
+  }
+
+  protected setSymmetric(on: boolean): void {
+    const others = this.hand().movementIds.filter((m) => m !== SYMMETRIC_MOVEMENT);
+    this.patch({ movementIds: on ? [...others, SYMMETRIC_MOVEMENT] : others });
   }
 
   protected setDirections(directionIds: string[]): void {

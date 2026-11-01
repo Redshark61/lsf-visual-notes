@@ -80,7 +80,13 @@ describe('parseSettings', () => {
   });
 
   it('relit des réglages valides', () => {
-    expect(parseSettings('{"touchDrawing":"pan","penDetected":true}')).toEqual({ touchDrawing: 'pan', penDetected: true });
+    expect(parseSettings('{"touchDrawing":"pan","penDetected":true,"seriesSize":20}')).toEqual({
+      touchDrawing: 'pan',
+      penDetected: true,
+      seriesSize: 20,
+    });
+    // Réglages antérieurs à la révision : taille de série par défaut.
+    expect(parseSettings('{"touchDrawing":"pan","penDetected":true}').seriesSize).toBe(DEFAULT_SETTINGS.seriesSize);
   });
 
   it('tolère un contenu invalide ou piégé', () => {

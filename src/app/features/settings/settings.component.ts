@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { SettingsService } from '../../core/services/settings.service';
 import { TouchDrawing } from '../../core/utils/board-input';
 import { BackupComponent } from '../backup/backup.component';
+import { MAX_SERIES_SIZE, MIN_SERIES_SIZE } from '../../core/utils/flashcards';
 
 interface TouchOption {
   value: TouchDrawing;
@@ -19,6 +20,14 @@ interface TouchOption {
 })
 export class SettingsComponent {
   protected readonly settings = inject(SettingsService);
+
+  protected readonly minSeries = MIN_SERIES_SIZE;
+  protected readonly maxSeries = MAX_SERIES_SIZE;
+
+  protected setSeries(input: HTMLInputElement): void {
+    this.settings.setSeriesSize(input.valueAsNumber);
+    input.value = String(this.settings.seriesSize()); // valeur hors bornes : on affiche celle retenue
+  }
 
   protected readonly options: TouchOption[] = [
     {

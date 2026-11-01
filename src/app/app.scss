@@ -19,11 +19,16 @@
 
   .brand {
     font-weight: 700;
+    white-space: nowrap;
   }
 
   nav {
     display: flex;
     gap: 1rem;
+    min-width: 0;
+    overflow-x: auto; // téléphone : les liens défilent au lieu d'être coupés
+    scrollbar-width: none;
+    white-space: nowrap;
   }
 
   a {

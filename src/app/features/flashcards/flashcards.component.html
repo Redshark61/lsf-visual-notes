@@ -1,0 +1,127 @@
+<section class="review">
+  @switch (stage()) {
+    @case ('setup') {
+      <h1>Révision</h1>
+      @if (signs() === null) {
+        <p class="hint">Chargement…</p>
+      } @else if (!allCount()) {
+        <p class="empty">
+          Aucun signe n'a encore de vidéo. Ajoutez-en une depuis l'<a routerLink="/atelier">Atelier</a> (bouton « Vidéo ») pour
+          pouvoir réviser.
+        </p>
+      } @else {
+        <fieldset>
+          <legend>Signes à réviser</legend>
+          <div class="chips">
+            <button type="button" class="chip" [attr.aria-pressed]="tag() === null" (click)="tag.set(null)">
+              Tous les signes <small>{{ allCount() }}</small>
+            </button>
+            @for (t of tags(); track t.tag) {
+              <button type="button" class="chip" [attr.aria-pressed]="tag() === t.tag" (click)="tag.set(t.tag)">
+                {{ t.tag }} <small>{{ t.count }}</small>
+              </button>
+            }
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Type de carte</legend>
+          <div class="segmented" role="radiogroup" aria-label="Type de carte">
+            @for (m of modes; track m.value) {
+              <button type="button" role="radio" [attr.aria-checked]="mode() === m.value" (click)="mode.set(m.value)">
+                {{ m.label }}
+              </button>
+            }
+          </div>
+        </fieldset>
+
+        <button type="button" class="primary start" (click)="start()">
+          Lancer {{ seriesLength() }} carte{{ seriesLength() > 1 ? 's' : '' }}
+        </button>
+        <p class="hint">
+          Série de {{ settings.seriesSize() }} cartes (modifiable dans les <a routerLink="/parametres">Paramètres</a>).
+          @if (withoutVideo()) {
+            {{ withoutVideo() }} signe{{ withoutVideo() > 1 ? 's' : '' }} sans vidéo {{ withoutVideo() > 1 ? 'ne sont' : "n'est" }}
+            pas proposé{{ withoutVideo() > 1 ? 's' : '' }}.
+          }
+        </p>
+      }
+    }
+
+    @case ('play') {
+      @if (card(); as c) {
+        <div class="progress">
+          <span>Carte {{ index() + 1 }} / {{ deck().length }}</span>
+          <button type="button" class="link" (click)="backToSetup()">Arrêter</button>
+        </div>
+        <progress [value]="index()" [max]="deck().length"></progress>
+
+        <article class="card">
+          @if (c.direction === 'video-to-word') {
+            <p class="question">Quel est ce signe ?</p>
+            <div class="video">
+              @if (clips(); as list) {
+                @if (list.length) {
+                  <app-chain-video [clips]="list" [hideWords]="true" />
+                } @else {
+                  <p class="hint">Vidéo introuvable.</p>
+                }
+              }
+            </div>
+            @if (revealed()) {
+              <p class="word answer">{{ cardSign()?.word }}</p>
+            }
+          } @else {
+            <p class="question">Comment signe-t-on…</p>
+            <p class="word">{{ cardSign()?.word }}</p>
+            @if (revealed()) {
+              <div class="video answer">
+                @if (clips(); as list) {
+                  @if (list.length) {
+                    <app-chain-video [clips]="list" />
+                  } @else {
+                    <p class="hint">Vidéo introuvable.</p>
+                  }
+                }
+              </div>
+            } @else {
+              <p class="hint">Faites le signe, puis vérifiez.</p>
+            }
+          }
+        </article>
+
+        <div class="actions">
+          @if (!revealed()) {
+            <button type="button" class="primary" (click)="revealed.set(true)">Voir la réponse</button>
+          } @else {
+            <button type="button" (click)="answer(false)">À revoir</button>
+            <button type="button" class="success" (click)="answer(true)">Je savais</button>
+          }
+        </div>
+      }
+    }
+
+    @case ('done') {
+      <h1>Série terminée</h1>
+      <p class="result">
+        <strong>{{ score() }} / {{ deck().length }}</strong>
+        {{ missed().length ? '' : '— parfait !' }}
+      </p>
+      @if (missedSigns().length) {
+        <p>À revoir :</p>
+        <ul class="missed">
+          @for (s of missedSigns(); track s.id) {
+            <li>{{ s.word }}</li>
+          }
+        </ul>
+      }
+      <div class="actions">
+        @if (missed().length) {
+          <button type="button" class="primary" (click)="retryMissed()">Rejouer les erreurs ({{ missed().length }})</button>
+        }
+        <button type="button" [class.primary]="!missed().length" (click)="start()">Nouvelle série</button>
+        <button type="button" (click)="backToSetup()">Changer de catégorie</button>
+      </div>
+    }
+  }
+</section>

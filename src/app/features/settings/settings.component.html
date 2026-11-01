@@ -37,5 +37,21 @@
     </p>
   </section>
 
+  <section class="card" aria-labelledby="review-title">
+    <h2 id="review-title">Révision</h2>
+    <label class="series">
+      Nombre de cartes par série
+      <input
+        type="number"
+        inputmode="numeric"
+        [min]="minSeries"
+        [max]="maxSeries"
+        [value]="settings.seriesSize()"
+        (change)="setSeries($any($event.target))"
+      />
+    </label>
+    <p class="hint">Entre {{ minSeries }} et {{ maxSeries }}. Moins de cartes si la catégorie a moins de signes filmés.</p>
+  </section>
+
   <app-backup />
 </section>

@@ -1,12 +1,15 @@
 import { TouchDrawing } from './board-input';
+import { clampSeriesSize, DEFAULT_SERIES_SIZE } from './flashcards';
 
 export interface AppSettings {
   touchDrawing: TouchDrawing;
   /** Un stylet a déjà été utilisé sur cet appareil. */
   penDetected: boolean;
+  /** Nombre de cartes d'une série de révision. */
+  seriesSize: number;
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { touchDrawing: 'auto', penDetected: false };
+export const DEFAULT_SETTINGS: AppSettings = { touchDrawing: 'auto', penDetected: false, seriesSize: DEFAULT_SERIES_SIZE };
 
 export const TOUCH_DRAWING_VALUES: readonly TouchDrawing[] = ['auto', 'draw', 'pan'];
 
@@ -20,6 +23,7 @@ export function parseSettings(raw: string | null | undefined): AppSettings {
         ? (data['touchDrawing'] as TouchDrawing)
         : DEFAULT_SETTINGS.touchDrawing,
       penDetected: data['penDetected'] === true,
+      seriesSize: clampSeriesSize(data['seriesSize']),
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

@@ -84,3 +84,16 @@ fieldset {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.series {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+
+  input {
+    width: 5rem;
+    padding: 0.35rem 0.5rem;
+    font: inherit;
+  }
+}

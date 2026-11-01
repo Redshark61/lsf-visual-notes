@@ -25,6 +25,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/notebook/notebook.component').then((m) => m.NotebookComponent),
   },
   {
+    path: 'revision',
+    title: 'Révision · LSF Notes',
+    loadComponent: () => import('./features/flashcards/flashcards.component').then((m) => m.FlashcardsComponent),
+  },
+  {
     path: 'parametres',
     title: 'Paramètres · LSF Notes',
     loadComponent: () => import('./features/settings/settings.component').then((m) => m.SettingsComponent),

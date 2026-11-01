@@ -18,11 +18,11 @@ export interface VideoClip {
       <app-blob-video
         [blob]="clip.blob"
         [loop]="clips().length === 1"
-        [label]="'Vidéo : ' + clip.word"
+        [label]="hideWords() ? 'Vidéo du signe' : 'Vidéo : ' + clip.word"
         [(speed)]="speed"
         (ended)="advance()"
       />
-      @if (clips().length > 1) {
+      @if (clips().length > 1 && !hideWords()) {
         <ol class="steps" aria-label="Enchaînement des signes">
           @for (c of clips(); track $index; let i = $index) {
             <li>
@@ -76,6 +76,8 @@ export interface VideoClip {
 })
 export class ChainVideoComponent {
   readonly clips = input.required<readonly VideoClip[]>();
+  /** Masque les noms des signes (révision : la vidéo ne doit pas trahir la réponse). */
+  readonly hideWords = input(false);
   protected readonly index = signal(0);
   protected readonly speed = signal(1);
   protected readonly current = computed(() => this.clips()[this.index()] ?? null);
